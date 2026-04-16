@@ -1,23 +1,13 @@
 services:
   neo-collector-adx:
     image: localhost/neo_adx_collector:1.0
-    depends_on:
-      - neo4j
     env_file:
       - .env
     volumes:
-      - ./config.demo.yaml:/app/config.demo.yaml:ro
-    command: [ "--config", "/app/config.demo.yaml", "--once" ]
+      - ./config.test.yaml:/app/config.test.yaml:ro
+    command: [ "--config", "/app/config.test.yaml", "--once" ]
 
 volumes:
   neo4j_data:
 
-  neo4j:
-    image: neo4j:5.20
-    ports:
-      - "7474:7474"
-      - "7687:7687"
-    environment:
-      NEO4J_AUTH: neo4j/neo4j12345
-    volumes:
-      - neo4j_data:/data
+
