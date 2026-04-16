@@ -33,7 +33,10 @@ class DryRunGraphRepository:
     def upsert_node(self, mutation: NodeMutation) -> MutationResult:
         self._logger.info(
             "dry_run_node",
-            extra={"name": mutation.business_properties.get("name"), "labels": mutation.labels},
+            extra={
+                "entity_name": mutation.business_properties.get("name"),
+                "entity_labels": mutation.labels,
+            },
         )
         return MutationResult(
             action="skipped",
@@ -58,7 +61,17 @@ class DryRunGraphRepository:
 
 
 class Neo4jGraphRepository:
-    def __init__(self, uri: str | None, database: str, username: str, password: str | None, timeout_seconds: int, verify_connectivity: bool, apply_schema: bool):
+    def __init__(
+        self,
+        uri: str | None,
+        database: str,
+        username: str,
+        password: str | None,
+        timeout_seconds: int,
+        verify_connectivity: bool,
+        apply_schema: bool,
+        relationship_types: list[str] | None = None,
+    ):
         if not uri:
             raise ConfigurationError("NEO4J_URI is required unless runtime.dry_run=true.")
         if not password:
@@ -71,6 +84,7 @@ class Neo4jGraphRepository:
         self.timeout_seconds = timeout_seconds
         self.verify_connectivity = verify_connectivity
         self.apply_schema = apply_schema
+        self.relationship_types = sorted(set(relationship_types or []))
         self._driver = None
 
     def connect(self) -> None:
@@ -99,9 +113,15 @@ class Neo4jGraphRepository:
     def ensure_schema(self) -> None:
         queries = [
             "CREATE CONSTRAINT entity_node_uid_unique IF NOT EXISTS FOR (n:Entity) REQUIRE n.node_uid IS UNIQUE",
-            "CREATE CONSTRAINT rel_uid_unique IF NOT EXISTS FOR ()-[r]-() REQUIRE r.rel_uid IS UNIQUE",
             "CREATE INDEX entity_name_index IF NOT EXISTS FOR (n:Entity) ON (n.name)",
         ]
+        for rel_type in self.relationship_types:
+            queries.append(
+                "CREATE CONSTRAINT "
+                f"{_constraint_name('rel_uid_unique', rel_type)} "
+                f"IF NOT EXISTS FOR ()-[r:{_escape_identifier(rel_type)}]-() "
+                "REQUIRE r.rel_uid IS UNIQUE"
+            )
         with self._session() as session:
             for query in queries:
                 try:
@@ -445,3 +465,8 @@ def _labels_fragment(labels: list[str]) -> str:
 
 def _escape_identifier(identifier: str) -> str:
     return f"`{identifier.replace('`', '``')}`"
+
+
+def _constraint_name(prefix: str, value: str) -> str:
+    safe_value = "".join(char if char.isalnum() else "_" for char in value)
+    return f"{prefix}_{safe_value}".strip("_")

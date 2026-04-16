@@ -13,6 +13,7 @@ from neo_collector_adx.models import (
     RelationshipTemplate,
     RowContext,
 )
+from neo_collector_adx.neo4j_client import DryRunGraphRepository
 from neo_collector_adx.templating import MutationBuilder
 
 
@@ -134,3 +135,22 @@ class MutationBuilderTests(unittest.TestCase):
         mutation = self.builder.build_relationship(template, self.row)
 
         self.assertIsNone(mutation)
+
+    def test_dry_run_repository_does_not_use_reserved_logrecord_keys(self) -> None:
+        template = NodeTemplate(
+            types=["User"],
+            template_hashes=["user-v1"],
+            update_policy="create",
+            static_properties={},
+            column_properties={"name": "UserPrincipalName"},
+            conditional_properties=[],
+            conditions=[],
+        )
+
+        mutation = self.builder.build_node(template, self.row)
+        repository = DryRunGraphRepository()
+
+        result = repository.upsert_node(mutation)
+
+        self.assertEqual("skipped", result.action)
+        self.assertEqual("node", result.kind)

@@ -37,6 +37,11 @@ class CollectorApplication:
         if self.config.runtime.dry_run:
             self.graph_repository = DryRunGraphRepository()
         else:
+            relationship_types = [
+                relationship.type
+                for job in self.config.jobs
+                for relationship in job.relationships
+            ]
             self.graph_repository = Neo4jGraphRepository(
                 uri=self.env.neo4j_uri,
                 database=self.env.neo4j_database,
@@ -45,6 +50,7 @@ class CollectorApplication:
                 timeout_seconds=self.env.neo4j_timeout_seconds,
                 verify_connectivity=self.env.neo4j_verify_connectivity,
                 apply_schema=self.env.neo4j_apply_schema,
+                relationship_types=relationship_types,
             )
         self.graph_repository.connect()
 
