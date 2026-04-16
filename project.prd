@@ -1,0 +1,103 @@
+
+## Objetivo
+Quero criar uma automação que vai criar nodes e relacionamentos em um neo4j a partir de informações coletadas de ADX. Essa solução precisa ser dinamica (configuravel e escalavel). 
+
+## Contexto
+   Esta é uma solução secundaria que integra a um app principal, por isso de algumas regras presentes nesse documento existirem. Neste app principal existe um guia para automações externas. Esta no documento "ingestao-automatica.md" neste diretorio, mas ignore as partes de consultar as definições em endpoints externos, as infos necessárias vao ser passadas manualmente no yaml de configuração deste app
+
+## Stack / Tecnologia
+Python
+
+## Regras
+   Deve ser limpo, modular e bem comentado, buscando facilitar manutenção futura 
+   Deve ter .env para configurações de conexão com neo4j, ADX e demais configurações necessárias ( Que não faça parte das configurações de query no adx, isso sera configurado em um yaml a parte)
+
+## Detalhamento
+Quero um script que vai rodar em container (mas quero poder testar local) e que seja configuravel por yaml. Vai funcionar da seguinte maneira, o script vai fazer queries em certos intervalos para um adx, a partir dos dados, esse script deve se comunicar com o neo4j para criar ou atualizar nodes e relacionamentos. 
+
+O yaml vai ser construido dessa maneira:
+
+- O usuário vai selecionar uma lista de jobs, que especificam queries que vao ser realizadas no adx
+
+- Para cada job, o usuário vai definir uma query e o intervalo de tempo que essa query deve ser executada. Nos jobs serão definidos os nodes e relacionamentos que serão criados ou atualizados. Deve ficar claro uma coisa, cada job vai rodar em cima de cada linha (de forma separada) da query no adx, então se a query processar 5 linhas por exemplo, a logica vai ser aplicada para cada linha de forma separada.
+
+- Na lista de nodes, para cada node, o usuário vai definir a lógica pra criar aquela linha, a partir das colunas da linha. Cada node deve ser configuravel as seguintes opçoes:
+
+
+### Campos obritório e manuais:
+   "Type": no campo type o usuário deve colocar uma lista de tipos para esse node a ser criado, ou seja as labels desse node. Devendo ser no minima uma.
+   "template_hashes": este campo é uma string, onde o usuário vai setar manualmente para cada node também    
+   "update_policy": define se a node deve ser criado ou atualizado se ja existir (valor merge), ou se deve ser apenas criado se nao existe (valor create, este é o default caso o update_policy nao seja especificado). Uma terceira opcao eh possivel: merge_at_change, onde o node so vai ser atualizado se todos os campos definidos pelo usuario no yaml (entao nao considerando campos automaticos da aplicacao como created_at ou updated_at etc...) forem diferentes.
+
+### Propriedade de node estáticos
+   Estas são propriedades ou atributos que o usuário vai colocar para aquele node de forma estática (não vai depender das linhas). O usuário por colocar, nenhum ou varios desses campos estáticos.
+### Propriedades de node dinâmico
+   Esta propriedades definidas no node a ser criado devem vir de colunas das linhas, então o usuário vai relecionar o nome do campo no node do neo4j e de qual coluna o valor desse campo vai ser originado.
+### Propriedades de node com condicao
+   Sao propriedades que vao ser setadas de acordo com condicoes. Essa propriedades vao ter 2 tipo, column e static, que indica a origem do valor da propriedade criada. As concicoes tambem vao ter 2 tipos, string e num, que indica oque vai ser comparado, se vai ser um valor numerico de uma coluna ou um valor de string de uma coluna.
+
+### Condições para o node ser criado
+   Essas condições podem ter 2 tipos, string e num. Para string deve ter 2 comparacoes, equals ou not_equals . Para num 4: equals, not_equals, greaterThan, lessThan 
+
+Atenção, entre as proriedades de node estáticos ou dinamicos, deve haver uma com key "name".
+
+Alem dessas configurações no yaml, para cada node a aplicação deve criar para os nodes:
+### Campos criados automáticamento pela aplicação
+   - `node_uid`: UUID estavel em formato string , esse uuid deve ser gerado pelo script
+   - label base `Entity` : Todo node vai ter essa label base
+   - campo `origin = "auto"`
+   - campo `created_at` em ISO 8601 
+   - campo `updated_at` em ISO 8601 
+
+- Na lista de relacionamentos, para cada relacionamento, o usuário vai definir a lógica pra criar aquele relacionamento, a partir das colunas das linhas. Cada relacionamento deve ser configuravel as seguintes opçoes:
+
+
+### Campos obritório e manuais:
+   "Type": no campo type o usuário deve colocar o tipo (label) da que relacionamento.
+   "template_hashes": este campo é uma string, onde o usuário vai setar manualmente para cada relacionamento também 
+   "update_policy": define se a relacionamento deve ser criado ou atualizado se ja existir (valor merge), ou se deve ser apenas criado se nao existe (valor create, este é o default caso o update_policy nao seja especificado). Uma terceira opcao eh possivel: merge_at_change, onde o relacionamento so vai ser atualizado se todos os campos definidos pelo usuario no yaml (entao nao considerando campos automaticos da aplicacao como created_at ou updated_at etc...) forem diferentes.
+
+### Propriedade de relacionamento estáticos
+   Estas são propriedades ou atributos que o usuário vai colocar para aquele relacionamento de forma estática (não vai depender do datapoint). O usuário pode colocar, nenhum ou varios desses campos estáticos.
+### Propriedades de relacionamento dinâmico
+   Esta propriedades definidas no relacionamento a ser criado devem vir de colunas das linhas, então o usuário vai relacionar o nome do campo no node do neo4j e de qual coluna o valor desse campo vai ser originado. 
+### Propriedades de relacionamento com condicao
+   Sao propriedades que vao ser setadas de acordo com condicoes. Essa propriedades vao ter 2 tipo, column e static, que indica a origem do valor da propriedade criada. As concicoes tambem vao ter 2 tipos, string e num, que indica oque vai ser comparado, se vai ser um valor numerico de uma coluna ou um valor de string de uma coluna.
+
+### Condições para o node ser criado
+   Essas condições podem ter 2 tipos, string e num. Para string deve ter 2 comparacoes, equals ou not_equals . Para num 4: equals, not_equals, greaterThan, lessThan 
+
+Alem disso, cada relacionamento vai ter 2 objetos, o node de origem e node de destino. Cada um desses deve ser configurado:
+      TIPO (colocada manualmente)
+      Atributos: Conjunto de chaves valores que deve dar match com o node de origem ou destino, os valores podem vir de colunas do resultado da query, então deve ter uma parte de valores manuais e uma parte de valores dinamicos (vindo da linha)
+
+Alem dessas configurações no yaml, para cada relacionamento a aplicação deve criar para os relacionamentos:
+### Campos criados automáticamento pela aplicação
+   - `node_uid`: UUID estavel em formato string , esse uuid deve ser gerado pelo script
+   - campo `origin = "auto"`
+   - campo `created_at` em ISO 8601 
+   - campo `updated_at` em ISO 8601 
+
+Para referencia, criei um arquivo de configuração no arquivo "config.demo.yaml" neste diretorio. Pode ter inconsistencias no arquivo, e não necessariamente todas as nomeclaturas e estruturas devem ser seguidas, é apenas uma referencia
+----------------
+
+
+Regras para manter consistencia:
+ -  Antes de criar um node, deve ser verificado a existencia de um node de mesmo tipo e nome no neo4j, se ja existe, considerar valor "update policy", para verificar se o node deve ser atualizado ou nao fazer nada.
+ -  A criacao do relacionamento nao deve criar novos nodes, apenas o relacionamento entre nodes ja existentes, caso nodes nao existirem, nao deve fazer nada. Deve exister tambem verificação de relacionamento equivalente, se ja existe, considerar valor "update policy", para verificar se o relacionamento deve ser atualizado ou nao fazer nada.
+ - Ao criar ou atualizar node, o campo "updated_at" sempre deve ser atualizado
+
+## Consistencias com outras soluções
+    Como ja citado, esta é uma solução secundaria que integra a um app principal, utilizando adx. Uma outra solução secundarias com as mesmas intenções ja foram desenvolvidas para ler dados de prometheus (nao adx, como essa), coloquei alguns arquivos de interesse dessa outra soluções em referencias/prometheus, la tem um doc dessa outra aplicação e arquivos utilizados para aquela configuração daquela aplicação. Tente usar estes arquivos para manter consistencia entre as soluções. Outra coisa que deixei foi um doc da solução principal, em referencias/ingestao-automaticas, mas como falei, ignore as partes de consultar as definições em endpoints externos, as infos necessárias vao ser passadas manualmente no yaml de configuração deste app
+
+## Outros detalhes
+   A aplicação vai posteriormente ser usada em um aks para acessar um adx, então recomendo usar bibliotecas da azure que permitam usar identidade gerenciada de forma automatica para diversos cenarios (sei que tem um modo de default em python que faz isso, permitindo usar usuario de serviço em env quando quiser também)
+
+## Entregavel
+   Código funcional
+   Estrutura de projeto
+   Inclua arquivo de instruções pra build, deploy, testes locais, etc..
+   Instruções e artefatos para build e deploy da solução em container docker (alem de execução local)
+   Diretorio docs/ para documentações
+   read.me explicando projeto e sua estrutura. 
+

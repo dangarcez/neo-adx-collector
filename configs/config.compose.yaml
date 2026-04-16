@@ -1,0 +1,48 @@
+runtime:
+  default_interval_seconds: 60
+  sleep_seconds: 0
+  dry_run: false
+
+jobs:
+  - name: signins_compose_demo
+    query: |
+      SigninLogs
+      | where TimeGenerated > ago(10m)
+      | project UserPrincipalName, IPAddress, AppDisplayName, TimeGenerated
+    interval_seconds: 60
+    nodes:
+      - type: User
+        template_hashes:
+          - user-v1
+        update_policy: merge
+        static_properties:
+          source_system: adx
+        column_properties:
+          name: UserPrincipalName
+          last_seen_at: TimeGenerated
+
+      - type: IPAddress
+        template_hashes:
+          - ip-address-v1
+        update_policy: merge
+        static_properties:
+          source_system: adx
+        column_properties:
+          name: IPAddress
+
+    relationships:
+      - type: USED_IP
+        template_hash: user-used-ip-v1
+        update_policy: merge
+        column_properties:
+          app_display_name: AppDisplayName
+        source:
+          type: User
+          match_attributes:
+            columns:
+              name: UserPrincipalName
+        target:
+          type: IPAddress
+          match_attributes:
+            columns:
+              name: IPAddress

@@ -1,0 +1,61 @@
+runtime:
+  default_interval_seconds: 300
+  sleep_seconds: 0
+  dry_run: false
+
+jobs:
+  - name: failed_signins
+    query: |
+      SigninLogs
+      | where TimeGenerated > ago(15m)
+      | summarize FailedAttempts = count(), LastFailure = max(TimeGenerated) by UserPrincipalName, IPAddress, AppDisplayName
+    interval_seconds: 300
+    nodes:
+      - types:
+          - User
+        template_hashes:
+          - user-v1
+        update_policy: merge
+        static_properties:
+          source_system: adx
+          category: identity
+        column_properties:
+          name: UserPrincipalName
+          last_failure_at: LastFailure
+        conditional_properties:
+          - type: static
+            name: risk
+            value: high
+            conditions:
+              - type: number
+                column: FailedAttempts
+                greater_than: 5
+
+      - type: IPAddress
+        template_hashes:
+          - ip-address-v1
+        update_policy: merge
+        static_properties:
+          source_system: adx
+        column_properties:
+          name: IPAddress
+
+    relationships:
+      - type: AUTHENTICATED_FROM
+        template_hash: user-authenticated-from-ip-v1
+        update_policy: merge
+        static_properties:
+          source_system: adx
+        column_properties:
+          app_display_name: AppDisplayName
+          failed_attempts: FailedAttempts
+        source:
+          type: User
+          match_attributes:
+            columns:
+              name: UserPrincipalName
+        target:
+          type: IPAddress
+          match_attributes:
+            columns:
+              name: IPAddress

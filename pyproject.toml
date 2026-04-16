@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "neo-collector-adx"
+version = "0.1.0"
+description = "Configurable ADX to Neo4j collector driven by YAML jobs."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "PyYAML>=6.0",
+  "azure-identity>=1.17.0",
+  "azure-kusto-data>=4.5.1",
+  "neo4j>=5.20.0",
+]
+
+[project.scripts]
+neo-collector-adx = "neo_collector_adx.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
