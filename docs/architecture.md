@@ -9,9 +9,9 @@ O coletor é dividido em quatro blocos principais:
 2. `adx_client.py`
    Executa queries no ADX usando o SDK oficial e autenticação Azure.
 3. `templating.py`
-   Resolve propriedades, condições e gera mutações determinísticas de nodes e relacionamentos por linha.
+   Resolve propriedades, condições, transforms e gera mutações determinísticas de nodes e relacionamentos por linha.
 4. `neo4j_client.py`
-   Localiza entidades equivalentes e aplica `create`, `merge` ou `merge_at_change`.
+   Localiza entidades equivalentes, aplica `create`, `merge` ou `merge_at_change` e gerencia `expires_at` quando configurado.
 
 ## Fluxo de execução
 
@@ -57,11 +57,11 @@ Cria apenas quando ainda não existe equivalente.
 
 ### `merge`
 
-Cria quando não existe. Quando existe, atualiza propriedades de negócio e `updated_at`.
+Cria quando não existe. Quando existe, atualiza propriedades de negócio e `updated_at`. Se houver `expiration_time_min`, renova `expires_at`.
 
 ### `merge_at_change`
 
-Só atualiza quando houve mudança nas propriedades definidas pelo YAML, ou quando o template precisa acrescentar labels ou hashes ausentes.
+Só atualiza quando houve mudança nas propriedades definidas pelo YAML, ou quando o template precisa acrescentar labels ou hashes ausentes. Se houver `expires_at`, ele não é renovado nesse modo.
 
 ## Regras automáticas aplicadas
 
@@ -73,6 +73,7 @@ Só atualiza quando houve mudança nas propriedades definidas pelo YAML, ou quan
 - `template_hashes`
 - `created_at`
 - `updated_at`
+- `expires_at` quando `expiration_time_min` estiver configurado
 
 ### Relacionamentos
 
@@ -81,6 +82,7 @@ Só atualiza quando houve mudança nas propriedades definidas pelo YAML, ou quan
 - `template_hashes`
 - `created_at`
 - `updated_at`
+- `expires_at` quando `expiration_time_min` estiver configurado
 
 ## Observações de consistência
 

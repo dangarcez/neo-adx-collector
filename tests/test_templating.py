@@ -10,10 +10,16 @@ from neo_collector_adx.models import (
     MatchAttributes,
     NodeSelector,
     NodeTemplate,
+    PropertyTransform,
+    PropertyTransformProcessor,
     RelationshipTemplate,
     RowContext,
 )
-from neo_collector_adx.neo4j_client import DryRunGraphRepository
+from neo_collector_adx.neo4j_client import (
+    DryRunGraphRepository,
+    _expires_at_value,
+    _resolve_relationship_expires_at,
+)
 from neo_collector_adx.templating import MutationBuilder
 
 
@@ -36,6 +42,7 @@ class MutationBuilderTests(unittest.TestCase):
             types=["User"],
             template_hashes=["user-v1"],
             update_policy="merge",
+            expiration_time_min=15,
             static_properties={"source_system": "adx"},
             column_properties={"name": "UserPrincipalName"},
             conditional_properties=[
@@ -53,16 +60,45 @@ class MutationBuilderTests(unittest.TestCase):
                     ],
                 )
             ],
+            property_transforms=[
+                PropertyTransform(
+                    property="name",
+                    process=[PropertyTransformProcessor(type="TO_UPPER")],
+                )
+            ],
             conditions=[],
         )
 
         mutation = self.builder.build_node(template, self.row)
 
         self.assertIsNotNone(mutation)
-        self.assertEqual("alice@example.com", mutation.business_properties["name"])
+        self.assertEqual("ALICE@EXAMPLE.COM", mutation.business_properties["name"])
         self.assertEqual("high", mutation.business_properties["risk"])
+        self.assertEqual(15, mutation.expiration_time_min)
         self.assertEqual("auto", mutation.properties["origin"])
         self.assertIn("Entity", mutation.labels)
+
+    def test_property_transform_ignores_non_string_values(self) -> None:
+        template = NodeTemplate(
+            types=["User"],
+            template_hashes=["user-v1"],
+            update_policy="merge",
+            static_properties={"risk_score": 10},
+            column_properties={"name": "UserPrincipalName"},
+            conditional_properties=[],
+            property_transforms=[
+                PropertyTransform(
+                    property="risk_score",
+                    process=[PropertyTransformProcessor(type="TO_UPPER")],
+                )
+            ],
+            conditions=[],
+        )
+
+        mutation = self.builder.build_node(template, self.row)
+
+        self.assertIsNotNone(mutation)
+        self.assertEqual(10, mutation.business_properties["risk_score"])
 
     def test_skips_node_when_name_resolves_to_missing_column(self) -> None:
         template = NodeTemplate(
@@ -154,3 +190,41 @@ class MutationBuilderTests(unittest.TestCase):
 
         self.assertEqual("skipped", result.action)
         self.assertEqual("node", result.kind)
+
+    def test_expires_at_helper_generates_future_timestamp(self) -> None:
+        expires_at = _expires_at_value(
+            30,
+            now=datetime(2026, 4, 21, 12, 0, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual("2026-04-21T12:30:00+00:00", expires_at)
+
+    def test_relationship_expiration_is_preserved_for_merge_at_change(self) -> None:
+        template = RelationshipTemplate(
+            type="AUTHENTICATED_FROM",
+            template_hash="user-ip-v1",
+            update_policy="merge_at_change",
+            expiration_time_min=15,
+            static_properties={},
+            column_properties={"country": "Country"},
+            conditional_properties=[],
+            property_transforms=[],
+            conditions=[],
+            source=NodeSelector(
+                type="User",
+                match_attributes=MatchAttributes(columns={"name": "UserPrincipalName"}),
+            ),
+            target=NodeSelector(
+                type="IPAddress",
+                match_attributes=MatchAttributes(columns={"name": "IPAddress"}),
+            ),
+        )
+        mutation = self.builder.build_relationship(template, self.row)
+
+        class ExistingRelationship:
+            properties = {"expires_at": "2026-04-21T13:00:00+00:00"}
+
+        self.assertEqual(
+            "2026-04-21T13:00:00+00:00",
+            _resolve_relationship_expires_at(ExistingRelationship(), mutation),
+        )

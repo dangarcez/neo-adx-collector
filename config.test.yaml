@@ -16,12 +16,17 @@ jobs:
         template_hashes:
           - wait-v1
         update_policy: merge
+        expiration_time_min: 45
         static_properties:
           source_system: adx
           category: identity
         column_properties:
           name: wait_type
           database_name: database_name
+        property_transforms:
+          - property: database_name
+            process:
+              - type: TO_UPPER
       
       - types:
           - SUB
@@ -40,10 +45,15 @@ jobs:
       - type: LIVES_IN
         template_hash: user-authenticated-from-ip-v1
         update_policy: merge
+        expiration_time_min: 20
         static_properties:
           source_system: adx
         column_properties:
           data_connection_source: database_name
+        property_transforms:
+          - property: data_connection_source
+            process:
+              - type: TO_LOWER
         source:
           type: Wait
           match_attributes:
@@ -54,4 +64,3 @@ jobs:
           match_attributes:
             columns:
               name: subscription_id
-

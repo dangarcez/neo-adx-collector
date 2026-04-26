@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from .exceptions import ConfigurationError
@@ -268,12 +269,16 @@ class Neo4jGraphRepository:
             ]
 
     def _create_node(self, mutation: NodeMutation) -> None:
+        properties = _with_expires_at(
+            mutation.properties,
+            mutation.expiration_time_min,
+        )
         query = f"""
         CREATE (n{_labels_fragment(mutation.labels)})
         SET n = $properties
         """
         with self._session() as session:
-            session.run(query, {"properties": mutation.properties}).consume()
+            session.run(query, {"properties": properties}).consume()
 
     def _update_node(self, existing: GraphNode, mutation: NodeMutation) -> None:
         current_hashes = _as_string_list(existing.properties.get("template_hashes"))
@@ -282,6 +287,10 @@ class Neo4jGraphRepository:
         property_updates = dict(mutation.business_properties)
         property_updates["updated_at"] = mutation.properties["updated_at"]
         property_updates["template_hashes"] = merged_hashes
+        if mutation.update_policy == "merge":
+            expires_at = _expires_at_value(mutation.expiration_time_min)
+            if expires_at is not None:
+                property_updates["expires_at"] = expires_at
         query = f"""
         MATCH (n)
         WHERE elementId(n) = $element_id
@@ -300,6 +309,10 @@ class Neo4jGraphRepository:
             ).consume()
 
     def _create_relationship(self, source: GraphNode, target: GraphNode, mutation: RelationshipMutation) -> None:
+        properties = _with_expires_at(
+            mutation.properties,
+            mutation.expiration_time_min,
+        )
         query = f"""
         MATCH (source), (target)
         WHERE elementId(source) = $source_id AND elementId(target) = $target_id
@@ -312,7 +325,7 @@ class Neo4jGraphRepository:
                 {
                     "source_id": source.element_id,
                     "target_id": target.element_id,
-                    "properties": mutation.properties,
+                    "properties": properties,
                 },
             ).consume()
 
@@ -331,6 +344,9 @@ class Neo4jGraphRepository:
         final_properties["template_hashes"] = merged_hashes
         final_properties["created_at"] = existing.properties.get("created_at") or mutation.properties["created_at"]
         final_properties["updated_at"] = mutation.properties["updated_at"]
+        expires_at = _resolve_relationship_expires_at(existing, mutation)
+        if expires_at is not None:
+            final_properties["expires_at"] = expires_at
 
         if existing.rel_type != mutation.type:
             query = f"""
@@ -470,3 +486,36 @@ def _escape_identifier(identifier: str) -> str:
 def _constraint_name(prefix: str, value: str) -> str:
     safe_value = "".join(char if char.isalnum() else "_" for char in value)
     return f"{prefix}_{safe_value}".strip("_")
+
+
+def _with_expires_at(properties: dict[str, Any], expiration_time_min: int | None) -> dict[str, Any]:
+    expires_at = _expires_at_value(expiration_time_min)
+    if expires_at is None:
+        return dict(properties)
+
+    output = dict(properties)
+    output["expires_at"] = expires_at
+    return output
+
+
+def _expires_at_value(expiration_time_min: int | None, *, now: datetime | None = None) -> str | None:
+    if expiration_time_min is None:
+        return None
+
+    base_time = now or datetime.now(timezone.utc)
+    if base_time.tzinfo is None:
+        base_time = base_time.replace(tzinfo=timezone.utc)
+    else:
+        base_time = base_time.astimezone(timezone.utc)
+    return (base_time + timedelta(minutes=expiration_time_min)).isoformat()
+
+
+def _resolve_relationship_expires_at(
+    existing: GraphRelationship,
+    mutation: RelationshipMutation,
+) -> str | None:
+    if mutation.update_policy == "merge":
+        renewed = _expires_at_value(mutation.expiration_time_min)
+        if renewed is not None:
+            return renewed
+    return existing.properties.get("expires_at")

@@ -16,12 +16,17 @@ jobs:
         template_hashes:
           - user-v1
         update_policy: merge
+        expiration_time_min: 60
         static_properties:
           source_system: adx
           category: identity
         column_properties:
           name: UserPrincipalName
           last_failure_at: LastFailure
+        property_transforms:
+          - property: name
+            process:
+              - type: TO_LOWER
         conditional_properties:
           - type: static
             name: risk
@@ -44,11 +49,16 @@ jobs:
       - type: AUTHENTICATED_FROM
         template_hash: user-authenticated-from-ip-v1
         update_policy: merge
+        expiration_time_min: 15
         static_properties:
           source_system: adx
         column_properties:
           app_display_name: AppDisplayName
           failed_attempts: FailedAttempts
+        property_transforms:
+          - property: app_display_name
+            process:
+              - type: TO_UPPER
         source:
           type: User
           match_attributes:

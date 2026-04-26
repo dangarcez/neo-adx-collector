@@ -9,6 +9,7 @@ UpdatePolicy = Literal["create", "merge", "merge_at_change"]
 ConditionOperator = Literal["equals", "not_equals", "greater_than", "less_than"]
 PropertySourceType = Literal["static", "column"]
 ConditionType = Literal["string", "number"]
+TransformProcessorType = Literal["TO_UPPER", "TO_LOWER"]
 
 
 @dataclass(slots=True)
@@ -29,6 +30,17 @@ class ConditionalProperty:
 
 
 @dataclass(slots=True)
+class PropertyTransformProcessor:
+    type: TransformProcessorType
+
+
+@dataclass(slots=True)
+class PropertyTransform:
+    property: str
+    process: list[PropertyTransformProcessor]
+
+
+@dataclass(slots=True)
 class MatchAttributes:
     static: dict[str, Any] = field(default_factory=dict)
     columns: dict[str, str] = field(default_factory=dict)
@@ -45,9 +57,11 @@ class NodeTemplate:
     types: list[str]
     template_hashes: list[str]
     update_policy: UpdatePolicy = "create"
+    expiration_time_min: int | None = None
     static_properties: dict[str, Any] = field(default_factory=dict)
     column_properties: dict[str, str] = field(default_factory=dict)
     conditional_properties: list[ConditionalProperty] = field(default_factory=list)
+    property_transforms: list[PropertyTransform] = field(default_factory=list)
     conditions: list[Condition] = field(default_factory=list)
 
 
@@ -56,9 +70,11 @@ class RelationshipTemplate:
     type: str
     template_hash: str
     update_policy: UpdatePolicy = "create"
+    expiration_time_min: int | None = None
     static_properties: dict[str, Any] = field(default_factory=dict)
     column_properties: dict[str, str] = field(default_factory=dict)
     conditional_properties: list[ConditionalProperty] = field(default_factory=list)
+    property_transforms: list[PropertyTransform] = field(default_factory=list)
     conditions: list[Condition] = field(default_factory=list)
     source: NodeSelector | None = None
     target: NodeSelector | None = None
@@ -121,6 +137,7 @@ class NodeMutation:
     labels: list[str]
     template_hashes: list[str]
     update_policy: UpdatePolicy
+    expiration_time_min: int | None
     business_properties: dict[str, Any]
     properties: dict[str, Any]
     stable_key: str
@@ -137,6 +154,7 @@ class RelationshipMutation:
     type: str
     template_hash: str
     update_policy: UpdatePolicy
+    expiration_time_min: int | None
     business_properties: dict[str, Any]
     properties: dict[str, Any]
     source_match: NodeMatch

@@ -26,8 +26,13 @@ class ConfigLoadingTests(unittest.TestCase):
                 template_hashes:
                   - user-v1
                 update_policy: mergeAtChange
+                expiration_time_min: 30
                 dynamic_properties:
                   name: UserPrincipalName
+                property_transforms:
+                  - property: name
+                    process:
+                      - type: TO_UPPER
             relationships:
               - type: AUTHENTICATED_FROM
                 template_hashes:
@@ -50,6 +55,8 @@ class ConfigLoadingTests(unittest.TestCase):
         self.assertEqual(120, config.runtime.default_interval_seconds)
         self.assertEqual(1, len(config.jobs))
         self.assertEqual("merge_at_change", config.jobs[0].nodes[0].update_policy)
+        self.assertEqual(30, config.jobs[0].nodes[0].expiration_time_min)
+        self.assertEqual("TO_UPPER", config.jobs[0].nodes[0].property_transforms[0].process[0].type)
         self.assertEqual("rel-v1", config.jobs[0].relationships[0].template_hash)
 
     def test_rejects_node_without_name_property(self) -> None:
@@ -85,6 +92,45 @@ class ConfigLoadingTests(unittest.TestCase):
                   match_attributes:
                     columns:
                       name: IPAddress
+        """
+
+        with _temp_yaml(yaml_text) as path:
+            with self.assertRaises(ConfigurationError):
+                load_app_config(path)
+
+    def test_rejects_non_positive_expiration_time(self) -> None:
+        yaml_text = """
+        jobs:
+          - name: signins
+            query: SigninLogs
+            nodes:
+              - type: User
+                template_hashes:
+                  - user-v1
+                expiration_time_min: 0
+                dynamic_properties:
+                  name: UserPrincipalName
+        """
+
+        with _temp_yaml(yaml_text) as path:
+            with self.assertRaises(ConfigurationError):
+                load_app_config(path)
+
+    def test_rejects_invalid_property_transform(self) -> None:
+        yaml_text = """
+        jobs:
+          - name: signins
+            query: SigninLogs
+            nodes:
+              - type: User
+                template_hashes:
+                  - user-v1
+                dynamic_properties:
+                  name: UserPrincipalName
+                property_transforms:
+                  - property: name
+                    process:
+                      - type: UNKNOWN
         """
 
         with _temp_yaml(yaml_text) as path:

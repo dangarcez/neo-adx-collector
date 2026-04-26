@@ -16,6 +16,8 @@ from .models import (
     MatchAttributes,
     NodeSelector,
     NodeTemplate,
+    PropertyTransform,
+    PropertyTransformProcessor,
     RelationshipTemplate,
     RuntimeConfig,
 )
@@ -139,6 +141,10 @@ def _parse_node_template(data: Any, job_name: str, index: int) -> NodeTemplate:
         min_items=1,
     )
     update_policy = _normalize_update_policy(data.get("update_policy"), ctx)
+    expiration_time_min = _parse_optional_positive_int(
+        data.get("expiration_time_min"),
+        f"{ctx}.expiration_time_min",
+    )
     static_properties = _parse_mapping(data.get("static_properties"), f"{ctx}.static_properties")
     column_properties = _parse_column_mapping(
         data.get("column_properties", data.get("dynamic_properties")),
@@ -147,6 +153,10 @@ def _parse_node_template(data: Any, job_name: str, index: int) -> NodeTemplate:
     conditional_properties = _parse_conditional_properties(
         data.get("conditional_properties") or [],
         f"{ctx}.conditional_properties",
+    )
+    property_transforms = _parse_property_transforms(
+        data.get("property_transforms") or [],
+        f"{ctx}.property_transforms",
     )
     conditions = _parse_conditions(data.get("conditions") or [], f"{ctx}.conditions")
 
@@ -157,9 +167,11 @@ def _parse_node_template(data: Any, job_name: str, index: int) -> NodeTemplate:
         types=types,
         template_hashes=template_hashes,
         update_policy=update_policy,
+        expiration_time_min=expiration_time_min,
         static_properties=static_properties,
         column_properties=column_properties,
         conditional_properties=conditional_properties,
+        property_transforms=property_transforms,
         conditions=conditions,
     )
 
@@ -172,6 +184,10 @@ def _parse_relationship_template(data: Any, job_name: str, index: int) -> Relati
     rel_type = _require_non_empty_string(data.get("type"), f"{ctx}.type")
     template_hash = _parse_relationship_hash(data, ctx)
     update_policy = _normalize_update_policy(data.get("update_policy"), ctx)
+    expiration_time_min = _parse_optional_positive_int(
+        data.get("expiration_time_min"),
+        f"{ctx}.expiration_time_min",
+    )
     static_properties = _parse_mapping(data.get("static_properties"), f"{ctx}.static_properties")
     column_properties = _parse_column_mapping(
         data.get("column_properties", data.get("dynamic_properties")),
@@ -181,6 +197,10 @@ def _parse_relationship_template(data: Any, job_name: str, index: int) -> Relati
         data.get("conditional_properties") or [],
         f"{ctx}.conditional_properties",
     )
+    property_transforms = _parse_property_transforms(
+        data.get("property_transforms") or [],
+        f"{ctx}.property_transforms",
+    )
     conditions = _parse_conditions(data.get("conditions") or [], f"{ctx}.conditions")
     source = _parse_selector(data.get("source"), f"{ctx}.source")
     target = _parse_selector(data.get("target"), f"{ctx}.target")
@@ -189,9 +209,11 @@ def _parse_relationship_template(data: Any, job_name: str, index: int) -> Relati
         type=rel_type,
         template_hash=template_hash,
         update_policy=update_policy,
+        expiration_time_min=expiration_time_min,
         static_properties=static_properties,
         column_properties=column_properties,
         conditional_properties=conditional_properties,
+        property_transforms=property_transforms,
         conditions=conditions,
         source=source,
         target=target,
@@ -275,6 +297,38 @@ def _parse_conditional_properties(data: Any, ctx: str) -> list[ConditionalProper
         )
 
     return output
+
+
+def _parse_property_transforms(data: Any, ctx: str) -> list[PropertyTransform]:
+    if not isinstance(data, list):
+        raise ConfigurationError(f"{ctx} must be a list.")
+
+    transforms: list[PropertyTransform] = []
+    for index, item in enumerate(data):
+        item_ctx = f"{ctx}[{index}]"
+        if not isinstance(item, dict):
+            raise ConfigurationError(f"{item_ctx} must be an object.")
+
+        property_name = _require_non_empty_string(item.get("property"), f"{item_ctx}.property")
+        process_data = item.get("process")
+        if not isinstance(process_data, list) or not process_data:
+            raise ConfigurationError(f"{item_ctx}.process must be a non-empty list.")
+
+        processors: list[PropertyTransformProcessor] = []
+        for process_index, process_item in enumerate(process_data):
+            process_ctx = f"{item_ctx}.process[{process_index}]"
+            if not isinstance(process_item, dict):
+                raise ConfigurationError(f"{process_ctx} must be an object.")
+
+            process_type = _require_non_empty_string(process_item.get("type"), f"{process_ctx}.type").upper()
+            if process_type not in {"TO_UPPER", "TO_LOWER"}:
+                raise ConfigurationError(f"{process_ctx}.type must be TO_UPPER or TO_LOWER.")
+
+            processors.append(PropertyTransformProcessor(type=process_type))
+
+        transforms.append(PropertyTransform(property=property_name, process=processors))
+
+    return transforms
 
 
 def _parse_conditions(data: Any, ctx: str) -> list[Condition]:
@@ -383,6 +437,12 @@ def _as_positive_int(value: Any, ctx: str) -> int:
     if parsed <= 0:
         raise ConfigurationError(f"{ctx} must be greater than zero.")
     return parsed
+
+
+def _parse_optional_positive_int(value: Any, ctx: str) -> int | None:
+    if value is None:
+        return None
+    return _as_positive_int(value, ctx)
 
 
 def _as_non_negative_float(value: Any, ctx: str) -> float:

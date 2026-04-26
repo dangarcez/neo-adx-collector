@@ -11,6 +11,7 @@ from .models import (
     Condition,
     NodeMatch,
     NodeMutation,
+    PropertyTransform,
     RelationshipMutation,
     RelationshipTemplate,
     RowContext,
@@ -30,6 +31,7 @@ class MutationBuilder:
             static_properties=template.static_properties,
             column_properties=template.column_properties,
             conditional_properties=template.conditional_properties,
+            property_transforms=template.property_transforms,
             row=row,
         )
         name = business_properties.get("name")
@@ -53,6 +55,7 @@ class MutationBuilder:
             labels=labels,
             template_hashes=template.template_hashes,
             update_policy=template.update_policy,
+            expiration_time_min=template.expiration_time_min,
             business_properties=business_properties,
             properties=properties,
             stable_key=stable_key,
@@ -70,6 +73,7 @@ class MutationBuilder:
             static_properties=template.static_properties,
             column_properties=template.column_properties,
             conditional_properties=template.conditional_properties,
+            property_transforms=template.property_transforms,
             row=row,
         )
         source_match = self._resolve_selector_match(template.source.type, template.source.match_attributes.static, template.source.match_attributes.columns, row)
@@ -95,6 +99,7 @@ class MutationBuilder:
             type=template.type,
             template_hash=template.template_hash,
             update_policy=template.update_policy,
+            expiration_time_min=template.expiration_time_min,
             business_properties=business_properties,
             properties=properties,
             source_match=source_match,
@@ -122,6 +127,7 @@ class MutationBuilder:
         static_properties: dict[str, Any],
         column_properties: dict[str, str],
         conditional_properties: list[ConditionalProperty],
+        property_transforms: list[PropertyTransform],
         row: RowContext,
     ) -> dict[str, Any]:
         properties = {
@@ -140,7 +146,28 @@ class MutationBuilder:
                 continue
             if item.from_column in row.row:
                 properties[item.name] = self._normalize_value(row.row[item.from_column])
+        self._apply_property_transforms(properties, property_transforms)
         return properties
+
+    def _apply_property_transforms(
+        self,
+        properties: dict[str, Any],
+        property_transforms: list[PropertyTransform],
+    ) -> None:
+        for transform in property_transforms:
+            current_value = properties.get(transform.property)
+            if current_value is None:
+                continue
+
+            transformed_value = current_value
+            for processor in transform.process:
+                if not isinstance(transformed_value, str):
+                    continue
+                if processor.type == "TO_UPPER":
+                    transformed_value = transformed_value.upper()
+                elif processor.type == "TO_LOWER":
+                    transformed_value = transformed_value.lower()
+            properties[transform.property] = transformed_value
 
     def _conditions_pass(self, conditions: list[Condition], row: RowContext) -> bool:
         return all(self._condition_passes(condition, row) for condition in conditions)
