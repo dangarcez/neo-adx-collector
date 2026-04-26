@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from neo_collector_adx.models import (
     ConditionalProperty,
     Condition,
+    GraphRelationship,
     MatchAttributes,
     NodeSelector,
     NodeTemplate,
@@ -17,6 +18,7 @@ from neo_collector_adx.models import (
 )
 from neo_collector_adx.neo4j_client import (
     DryRunGraphRepository,
+    Neo4jGraphRepository,
     _expires_at_value,
     _resolve_relationship_expires_at,
 )
@@ -32,6 +34,7 @@ class MutationBuilderTests(unittest.TestCase):
                 "IPAddress": "10.0.0.10",
                 "FailedAttempts": 6,
                 "Country": "BR",
+                "ResourceName": "cpu_vru",
             },
             job_name="failed_signins",
             collected_at=datetime(2026, 4, 16, 12, 0, tzinfo=timezone.utc),
@@ -100,6 +103,62 @@ class MutationBuilderTests(unittest.TestCase):
         self.assertIsNotNone(mutation)
         self.assertEqual(10, mutation.business_properties["risk_score"])
 
+    def test_regex_property_transform_uses_capture_groups(self) -> None:
+        template = NodeTemplate(
+            types=["Resource"],
+            template_hashes=["resource-v1"],
+            update_policy="merge",
+            static_properties={},
+            column_properties={"name": "ResourceName"},
+            conditional_properties=[],
+            property_transforms=[
+                PropertyTransform(
+                    property="name",
+                    process=[
+                        PropertyTransformProcessor(
+                            type="REGEX",
+                            pattern=r"(\w+)_(\w+)",
+                            output="$1_and_$2",
+                        )
+                    ],
+                )
+            ],
+            conditions=[],
+        )
+
+        mutation = self.builder.build_node(template, self.row)
+
+        self.assertIsNotNone(mutation)
+        self.assertEqual("cpu_and_vru", mutation.business_properties["name"])
+
+    def test_regex_property_transform_preserves_value_without_match(self) -> None:
+        template = NodeTemplate(
+            types=["Resource"],
+            template_hashes=["resource-v1"],
+            update_policy="merge",
+            static_properties={},
+            column_properties={"name": "ResourceName"},
+            conditional_properties=[],
+            property_transforms=[
+                PropertyTransform(
+                    property="name",
+                    process=[
+                        PropertyTransformProcessor(
+                            type="REGEX",
+                            pattern=r"^(\d+)$",
+                            output="$1",
+                        )
+                    ],
+                )
+            ],
+            conditions=[],
+        )
+
+        mutation = self.builder.build_node(template, self.row)
+
+        self.assertIsNotNone(mutation)
+        self.assertEqual("cpu_vru", mutation.business_properties["name"])
+
     def test_skips_node_when_name_resolves_to_missing_column(self) -> None:
         template = NodeTemplate(
             types=["User"],
@@ -148,6 +207,38 @@ class MutationBuilderTests(unittest.TestCase):
         self.assertEqual("alice@example.com", mutation.source_match.attributes["name"])
         self.assertEqual("10.0.0.10", mutation.target_match.attributes["name"])
         self.assertEqual("BR", mutation.business_properties["country"])
+        self.assertEqual("user-ip-v1", mutation.properties["template_hash"])
+        self.assertNotIn("template_hashes", mutation.properties)
+
+    def test_relationship_update_comparison_uses_template_hash_property(self) -> None:
+        template = RelationshipTemplate(
+            type="AUTHENTICATED_FROM",
+            template_hash="user-ip-v1",
+            update_policy="merge_at_change",
+            static_properties={},
+            column_properties={"country": "Country"},
+            conditional_properties=[],
+            conditions=[],
+            source=NodeSelector(
+                type="User",
+                match_attributes=MatchAttributes(columns={"name": "UserPrincipalName"}),
+            ),
+            target=NodeSelector(
+                type="IPAddress",
+                match_attributes=MatchAttributes(columns={"name": "IPAddress"}),
+            ),
+        )
+        mutation = self.builder.build_relationship(template, self.row)
+        repository = object.__new__(Neo4jGraphRepository)
+
+        current = GraphRelationship(
+            element_id="rel-1",
+            rel_type="AUTHENTICATED_FROM",
+            properties={"template_hash": "user-ip-v1", "country": "BR"},
+        )
+
+        self.assertIsNotNone(mutation)
+        self.assertFalse(repository._relationship_needs_update(current, mutation))
 
     def test_skips_relationship_when_selector_column_is_missing(self) -> None:
         template = RelationshipTemplate(

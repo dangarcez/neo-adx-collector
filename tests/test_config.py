@@ -137,6 +137,79 @@ class ConfigLoadingTests(unittest.TestCase):
             with self.assertRaises(ConfigurationError):
                 load_app_config(path)
 
+    def test_loads_regex_property_transform(self) -> None:
+        yaml_text = """
+        jobs:
+          - name: resources
+            query: Resources
+            nodes:
+              - type: Resource
+                template_hashes:
+                  - resource-v1
+                column_properties:
+                  name: ResourceName
+                property_transforms:
+                  - property: name
+                    process:
+                      - type: regex
+                        pattern: '/(\\w+)_(\\w+)/'
+                        output: '$1_and_$2'
+        """
+
+        with _temp_yaml(yaml_text) as path:
+            config = load_app_config(path)
+
+        processor = config.jobs[0].nodes[0].property_transforms[0].process[0]
+        self.assertEqual("REGEX", processor.type)
+        self.assertEqual(r"(\w+)_(\w+)", processor.pattern)
+        self.assertEqual("$1_and_$2", processor.output)
+
+    def test_rejects_regex_transform_without_capture_group(self) -> None:
+        yaml_text = """
+        jobs:
+          - name: resources
+            query: Resources
+            nodes:
+              - type: Resource
+                template_hashes:
+                  - resource-v1
+                column_properties:
+                  name: ResourceName
+                property_transforms:
+                  - property: name
+                    process:
+                      - type: regex
+                        pattern: '/resource-.+/'
+                        output: '$1'
+        """
+
+        with _temp_yaml(yaml_text) as path:
+            with self.assertRaises(ConfigurationError):
+                load_app_config(path)
+
+    def test_rejects_regex_transform_with_invalid_group_reference(self) -> None:
+        yaml_text = """
+        jobs:
+          - name: resources
+            query: Resources
+            nodes:
+              - type: Resource
+                template_hashes:
+                  - resource-v1
+                column_properties:
+                  name: ResourceName
+                property_transforms:
+                  - property: name
+                    process:
+                      - type: regex
+                        pattern: '/(\\w+)_(\\w+)/'
+                        output: '$1_and_$3'
+        """
+
+        with _temp_yaml(yaml_text) as path:
+            with self.assertRaises(ConfigurationError):
+                load_app_config(path)
+
 
 class _temp_yaml:
     def __init__(self, text: str):

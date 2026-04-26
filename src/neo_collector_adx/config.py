@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +32,8 @@ UPDATE_POLICY_ALIASES = {
 }
 NUMBER_OPERATORS = ("equals", "not_equals", "greater_than", "less_than")
 STRING_OPERATORS = ("equals", "not_equals")
+TRANSFORM_PROCESSOR_TYPES = {"TO_UPPER", "TO_LOWER", "REGEX"}
+GROUP_REFERENCE_PATTERN = re.compile(r"\$(\d+)")
 
 
 def load_environment() -> EnvironmentConfig:
@@ -317,18 +320,60 @@ def _parse_property_transforms(data: Any, ctx: str) -> list[PropertyTransform]:
         processors: list[PropertyTransformProcessor] = []
         for process_index, process_item in enumerate(process_data):
             process_ctx = f"{item_ctx}.process[{process_index}]"
-            if not isinstance(process_item, dict):
-                raise ConfigurationError(f"{process_ctx} must be an object.")
-
-            process_type = _require_non_empty_string(process_item.get("type"), f"{process_ctx}.type").upper()
-            if process_type not in {"TO_UPPER", "TO_LOWER"}:
-                raise ConfigurationError(f"{process_ctx}.type must be TO_UPPER or TO_LOWER.")
-
-            processors.append(PropertyTransformProcessor(type=process_type))
+            processors.append(_parse_property_transform_processor(process_item, process_ctx))
 
         transforms.append(PropertyTransform(property=property_name, process=processors))
 
     return transforms
+
+
+def _parse_property_transform_processor(data: Any, ctx: str) -> PropertyTransformProcessor:
+    if not isinstance(data, dict):
+        raise ConfigurationError(f"{ctx} must be an object.")
+
+    process_type = _require_non_empty_string(data.get("type"), f"{ctx}.type").upper()
+    if process_type not in TRANSFORM_PROCESSOR_TYPES:
+        raise ConfigurationError(f"{ctx}.type must be TO_UPPER, TO_LOWER or REGEX.")
+
+    if process_type != "REGEX":
+        return PropertyTransformProcessor(type=process_type)
+
+    raw_pattern = _require_non_empty_string(data.get("pattern"), f"{ctx}.pattern")
+    pattern = _normalize_regex_pattern(raw_pattern)
+    if not pattern:
+        raise ConfigurationError(f"{ctx}.pattern must not be empty after delimiter normalization.")
+
+    try:
+        compiled_pattern = re.compile(pattern)
+    except re.error as exc:
+        raise ConfigurationError(f"{ctx}.pattern must be a valid regular expression: {exc}.") from exc
+
+    if compiled_pattern.groups < 1:
+        raise ConfigurationError(f"{ctx}.pattern must define at least one capture group.")
+
+    output = _require_non_empty_string(data.get("output"), f"{ctx}.output")
+    group_references = [int(match.group(1)) for match in GROUP_REFERENCE_PATTERN.finditer(output)]
+    if not group_references:
+        raise ConfigurationError(f"{ctx}.output must reference at least one capture group using $1, $2, ...")
+
+    invalid_references = [
+        group_number
+        for group_number in group_references
+        if group_number < 1 or group_number > compiled_pattern.groups
+    ]
+    if invalid_references:
+        invalid_display = ", ".join(f"${group_number}" for group_number in invalid_references)
+        raise ConfigurationError(
+            f"{ctx}.output references group(s) not defined by pattern: {invalid_display}."
+        )
+
+    return PropertyTransformProcessor(type=process_type, pattern=pattern, output=output)
+
+
+def _normalize_regex_pattern(pattern: str) -> str:
+    if len(pattern) >= 2 and pattern.startswith("/") and pattern.endswith("/"):
+        return pattern[1:-1]
+    return pattern
 
 
 def _parse_conditions(data: Any, ctx: str) -> list[Condition]:

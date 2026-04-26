@@ -244,7 +244,7 @@ class Neo4jGraphRepository:
           AND elementId(t) = $target_id
           AND (
             type(r) = $rel_type
-            OR $template_hash IN coalesce(r.template_hashes, [])
+            OR r.template_hash = $template_hash
           )
         RETURN elementId(r) AS element_id, type(r) AS rel_type, properties(r) AS properties
         LIMIT 2
@@ -336,12 +336,10 @@ class Neo4jGraphRepository:
         existing: GraphRelationship,
         mutation: RelationshipMutation,
     ) -> None:
-        current_hashes = _as_string_list(existing.properties.get("template_hashes"))
-        merged_hashes = _merge_unique(current_hashes, [mutation.template_hash])
         final_properties = dict(mutation.business_properties)
         final_properties["rel_uid"] = existing.properties.get("rel_uid") or mutation.properties["rel_uid"]
         final_properties["origin"] = existing.properties.get("origin") or "auto"
-        final_properties["template_hashes"] = merged_hashes
+        final_properties["template_hash"] = mutation.template_hash
         final_properties["created_at"] = existing.properties.get("created_at") or mutation.properties["created_at"]
         final_properties["updated_at"] = mutation.properties["updated_at"]
         expires_at = _resolve_relationship_expires_at(existing, mutation)
@@ -412,8 +410,7 @@ class Neo4jGraphRepository:
         existing: GraphRelationship,
         mutation: RelationshipMutation,
     ) -> bool:
-        existing_hashes = set(_as_string_list(existing.properties.get("template_hashes")))
-        if mutation.template_hash not in existing_hashes:
+        if existing.properties.get("template_hash") != mutation.template_hash:
             return True
         if existing.rel_type != mutation.type:
             return True

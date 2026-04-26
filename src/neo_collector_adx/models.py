@@ -9,7 +9,7 @@ UpdatePolicy = Literal["create", "merge", "merge_at_change"]
 ConditionOperator = Literal["equals", "not_equals", "greater_than", "less_than"]
 PropertySourceType = Literal["static", "column"]
 ConditionType = Literal["string", "number"]
-TransformProcessorType = Literal["TO_UPPER", "TO_LOWER"]
+TransformProcessorType = Literal["TO_UPPER", "TO_LOWER", "REGEX"]
 
 
 @dataclass(slots=True)
@@ -32,6 +32,8 @@ class ConditionalProperty:
 @dataclass(slots=True)
 class PropertyTransformProcessor:
     type: TransformProcessorType
+    pattern: str | None = None
+    output: str | None = None
 
 
 @dataclass(slots=True)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from datetime import date, datetime, time, timezone
 from decimal import Decimal
@@ -17,6 +18,9 @@ from .models import (
     RowContext,
     NodeTemplate,
 )
+
+
+GROUP_REFERENCE_PATTERN = re.compile(r"\$(\d+)")
 
 
 class MutationBuilder:
@@ -90,7 +94,7 @@ class MutationBuilder:
             {
                 "rel_uid": str(uuid.uuid5(self.namespace, stable_key)),
                 "origin": "auto",
-                "template_hashes": [template.template_hash],
+                "template_hash": template.template_hash,
                 "created_at": now,
                 "updated_at": now,
             }
@@ -167,6 +171,12 @@ class MutationBuilder:
                     transformed_value = transformed_value.upper()
                 elif processor.type == "TO_LOWER":
                     transformed_value = transformed_value.lower()
+                elif processor.type == "REGEX":
+                    transformed_value = _apply_regex_transform(
+                        transformed_value,
+                        processor.pattern,
+                        processor.output,
+                    )
             properties[transform.property] = transformed_value
 
     def _conditions_pass(self, conditions: list[Condition], row: RowContext) -> bool:
@@ -231,6 +241,22 @@ def _compare_values(left: Any, right: Any, operator: str) -> bool:
     if operator == "less_than":
         return left < right
     raise ValueError(f"Unsupported operator: {operator}")
+
+
+def _apply_regex_transform(value: str, pattern: str | None, output: str | None) -> str:
+    if pattern is None or output is None:
+        return value
+
+    match = re.search(pattern, value)
+    if match is None:
+        return value
+
+    def replace_group_reference(match_reference: re.Match[str]) -> str:
+        group_number = int(match_reference.group(1))
+        group_value = match.group(group_number)
+        return "" if group_value is None else group_value
+
+    return GROUP_REFERENCE_PATTERN.sub(replace_group_reference, output)
 
 
 def _to_number(value: Any) -> float | None:

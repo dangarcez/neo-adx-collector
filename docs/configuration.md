@@ -339,12 +339,14 @@ Cada template de relacionamento e avaliado contra cada linha retornada pela quer
 
 ### Observacao importante sobre persistencia
 
-Na configuracao, relacionamento usa `template_hash` singular como entrada canonica. Durante a construcao da mutacao para o grafo, esse valor e persistido como `template_hashes` com um unico item.
+Na configuracao, relacionamento usa `template_hash` singular como entrada canonica. Durante a construcao da mutacao para o grafo, esse mesmo valor e persistido no Neo4j como `template_hash` string.
+
+O alias `template_hashes` continua aceito apenas na entrada YAML de relacionamento quando houver um unico item, mas ele e normalizado para `template_hash` antes da criacao da mutacao.
 
 Exemplo:
 
 - config: `template_hash: user-authenticated-from-ip-v1`
-- propriedade persistida no Neo4j: `template_hashes: ["user-authenticated-from-ip-v1"]`
+- propriedade persistida no Neo4j: `template_hash: "user-authenticated-from-ip-v1"`
 
 ## Source e Target
 
@@ -494,13 +496,83 @@ Processors suportados:
 
 - `TO_UPPER`
 - `TO_LOWER`
+- `regex` ou `REGEX`
+
+Os tipos de processor sao normalizados internamente para maiusculas. Por consistencia com o contrato generico, exemplos novos podem usar `type: regex`; o valor persistido em memoria sera `REGEX`.
+
+#### `TO_UPPER`
+
+Converte o valor da propriedade para maiusculas.
+
+```yaml
+property_transforms:
+  - property: name
+    process:
+      - type: TO_UPPER
+```
+
+#### `TO_LOWER`
+
+Converte o valor da propriedade para minusculas.
+
+```yaml
+property_transforms:
+  - property: name
+    process:
+      - type: TO_LOWER
+```
+
+#### `regex`
+
+Recria o valor da propriedade a partir de grupos capturados por uma expressao regular.
+
+Campos adicionais:
+
+| Campo | Tipo | Obrigatorio | Descricao |
+| --- | --- | --- | --- |
+| `pattern` | string | sim | Expressao regular usada para capturar grupos. Pode ser informada como regex pura ou delimitada por `/.../`. |
+| `output` | string | sim | Template de saida. Referencia grupos capturados com `$1`, `$2`, etc. |
+
+Exemplo:
+
+```yaml
+property_transforms:
+  - property: name
+    process:
+      - type: regex
+        pattern: '/(\w+)_(\w+)/'
+        output: '$1_and_$2'
+```
+
+Com `name: cpu_vru`, o resultado sera `name: cpu_and_vru`.
+
+Regras especificas:
+
+- `pattern` precisa ser uma expressao regular valida
+- `pattern` precisa ter pelo menos um grupo de captura
+- `output` precisa referenciar pelo menos um grupo com `$1`, `$2`, etc.
+- referencias no `output` precisam existir no `pattern`
+- se o valor da propriedade nao der match no `pattern`, o valor original e preservado
+- grupos opcionais sem valor sao substituidos por string vazia
+
+Processors podem ser encadeados na ordem declarada:
+
+```yaml
+property_transforms:
+  - property: resource_name
+    process:
+      - type: regex
+        pattern: '/(\w+)_(\w+)/'
+        output: '$1-and-$2'
+      - type: TO_UPPER
+```
 
 Regras:
 
 - roda depois de `static_properties`, `column_properties` e `conditional_properties`
 - roda antes dos campos automaticos
 - se a propriedade nao existir, o transform e ignorado
-- se o valor nao for string, `TO_UPPER` e `TO_LOWER` sao ignorados
+- se o valor nao for string, o processor e ignorado
 
 ### `expiration_time_min`
 
@@ -616,6 +688,7 @@ Se o campo for omitido, o default e `create`.
 - `relationships[].template_hashes` com um unico item e convertido para `template_hash`
 - `mergeAtChange` e `merge-at-change` sao aceitos como alias de `merge_at_change`
 - `dynamic_properties` e aceito como alias de `column_properties`
+- tipos em `property_transforms[].process[].type` sao normalizados para maiusculas
 - aliases legados de match sao incorporados em `match_attributes`
 - strings com espacos nas extremidades sao `trimadas` nos campos relevantes
 
@@ -637,6 +710,7 @@ O bootstrap falha antes de iniciar o scheduler quando encontrar erros como:
 - `update_policy` fora de `create`, `merge` ou `merge_at_change`
 - `expiration_time_min <= 0` quando informado
 - `property_transforms` sem `property`, sem `process` ou com processor invalido
+- processor `regex` sem `pattern`, sem `output`, com regex invalida, sem grupo de captura ou com referencia de grupo inexistente
 - `conditional_properties` sem `name`, `type` valido ou `conditions`
 - condicoes com mais de um operador
 

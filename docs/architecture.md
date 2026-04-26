@@ -79,7 +79,7 @@ Só atualiza quando houve mudança nas propriedades definidas pelo YAML, ou quan
 
 - `rel_uid`
 - `origin = "auto"`
-- `template_hashes`
+- `template_hash`
 - `created_at`
 - `updated_at`
 - `expires_at` quando `expiration_time_min` estiver configurado
