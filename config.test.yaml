@@ -27,7 +27,8 @@ jobs:
           - property: database_name
             process:
               - type: TO_UPPER
-      
+            
+        
       - types:
           - SUB
         template_hashes:

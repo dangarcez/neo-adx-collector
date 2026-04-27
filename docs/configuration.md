@@ -240,7 +240,7 @@ Cada template de node e avaliado contra cada linha retornada pela query do job.
 | `types` | lista de string | condicional | - | Lista de labels tecnicas do node. Deve haver ao menos uma. |
 | `template_hashes` | lista de string | sim | - | Lista de hashes de definicao associados ao node. |
 | `update_policy` | string | nao | `create` | Politica de persistencia: `create`, `merge` ou `merge_at_change`. |
-| `expiration_time_min` | inteiro | nao | ausente | Quando informado, gera `expires_at` como horario atual UTC + esse numero de minutos. So e aplicado em `create` e `merge`. |
+| `expiration_time_min` | inteiro | nao | ausente | Quando informado, gera `z4j_expires_at` como horario atual UTC + esse numero de minutos. So e aplicado em `create` e `merge`. |
 | `static_properties` | mapa | nao | `{}` | Propriedades literais copiadas para o node. |
 | `column_properties` | mapa string->string | nao | `{}` | Propriedades dinamicas resolvidas a partir das colunas da linha. |
 | `conditional_properties` | lista | nao | `[]` | Propriedades aplicadas apenas quando suas condicoes passam. |
@@ -252,6 +252,8 @@ Cada template de node e avaliado contra cada linha retornada pela query do job.
 - deve haver pelo menos um tipo em `types`, ou um `type` que sera normalizado para `types`
 - deve haver ao menos um item em `template_hashes`
 - a propriedade `name` precisa ser definida em `static_properties` ou `column_properties`
+
+Na persistencia, o valor de `template_hashes` do YAML e gravado no Neo4j como `z4j_template_hashes`.
 
 ### Exemplo minimo
 
@@ -305,7 +307,7 @@ Cada template de relacionamento e avaliado contra cada linha retornada pela quer
 | `template_hash` | string | condicional | - | Hash canonico da definicao de relacionamento. |
 | `template_hashes` | lista de string | condicional | - | Alias aceito apenas quando houver um unico item; sera normalizado para `template_hash`. |
 | `update_policy` | string | nao | `create` | Politica de persistencia: `create`, `merge` ou `merge_at_change`. |
-| `expiration_time_min` | inteiro | nao | ausente | Quando informado, gera `expires_at` como horario atual UTC + esse numero de minutos. So e aplicado em `create` e `merge`. |
+| `expiration_time_min` | inteiro | nao | ausente | Quando informado, gera `z4j_expires_at` como horario atual UTC + esse numero de minutos. So e aplicado em `create` e `merge`. |
 | `static_properties` | mapa | nao | `{}` | Propriedades literais do relacionamento. |
 | `column_properties` | mapa string->string | nao | `{}` | Propriedades dinamicas resolvidas da linha. |
 | `conditional_properties` | lista | nao | `[]` | Propriedades aplicadas apenas se as condicoes forem satisfeitas. |
@@ -339,14 +341,14 @@ Cada template de relacionamento e avaliado contra cada linha retornada pela quer
 
 ### Observacao importante sobre persistencia
 
-Na configuracao, relacionamento usa `template_hash` singular como entrada canonica. Durante a construcao da mutacao para o grafo, esse mesmo valor e persistido no Neo4j como `template_hash` string.
+Na configuracao, relacionamento usa `template_hash` singular como entrada canonica. Durante a construcao da mutacao para o grafo, esse mesmo valor e persistido no Neo4j como `z4j_template_hash` string.
 
-O alias `template_hashes` continua aceito apenas na entrada YAML de relacionamento quando houver um unico item, mas ele e normalizado para `template_hash` antes da criacao da mutacao.
+O alias `template_hashes` continua aceito apenas na entrada YAML de relacionamento quando houver um unico item, mas ele e normalizado para `template_hash` antes da criacao da mutacao. Os nomes do YAML continuam sem `z4j_`; o prefixo se aplica apenas as propriedades tecnicas persistidas no grafo.
 
 Exemplo:
 
 - config: `template_hash: user-authenticated-from-ip-v1`
-- propriedade persistida no Neo4j: `template_hash: "user-authenticated-from-ip-v1"`
+- propriedade persistida no Neo4j: `z4j_template_hash: "user-authenticated-from-ip-v1"`
 
 ## Source e Target
 
@@ -381,7 +383,7 @@ source:
   type: User
   match_attributes:
     static:
-      origin: auto
+      z4j_origin: auto
     columns:
       name: UserPrincipalName
 ```
@@ -403,14 +405,16 @@ target:
   match_column_attributes:
     name: IPAddress
   match_static_attributes:
-    origin: auto
+    z4j_origin: auto
 ```
 
 ## Propriedades
 
 Existem quatro formas de definir e ajustar propriedades em nodes e relacionamentos.
 
-Separadamente dessas quatro formas, nodes e relacionamentos tambem podem declarar `expiration_time_min`, que nao escreve uma propriedade de negocio diretamente no planner. Esse campo instrui o repositorio a gerar `expires_at` no momento da escrita, com base no horario atual UTC.
+Separadamente dessas quatro formas, nodes e relacionamentos tambem podem declarar `expiration_time_min`, que nao escreve uma propriedade de negocio diretamente no planner. Esse campo instrui o repositorio a gerar `z4j_expires_at` no momento da escrita, com base no horario atual UTC.
+
+Campos automaticos e semiautomaticos persistidos pelo app usam o prefixo `z4j_`. Campos de negocio definidos pelo usuario, incluindo `name`, nao recebem prefixo.
 
 ### `static_properties`
 
@@ -580,10 +584,10 @@ Campo opcional para node ou relacionamento.
 
 Semantica:
 
-- gera `expires_at = agora_utc + expiration_time_min`
-- `expires_at` e gerado apenas na persistencia
-- `expires_at` so entra em `create` e `merge`
-- `merge_at_change` nao deve renovar `expires_at`
+- gera `z4j_expires_at = agora_utc + expiration_time_min`
+- `z4j_expires_at` e gerado apenas na persistencia
+- `z4j_expires_at` so entra em `create` e `merge`
+- `merge_at_change` nao deve renovar `z4j_expires_at`
 
 ## Condicoes
 
@@ -651,21 +655,21 @@ Valores:
 
 - cria somente se a entidade equivalente ainda nao existir
 - se ja existir, a mutacao e ignorada
-- se `expiration_time_min` existir, cria `expires_at` na insercao
+- se `expiration_time_min` existir, cria `z4j_expires_at` na insercao
 
 `merge`
 
 - cria quando nao existe
 - atualiza propriedades quando ja existe
-- se `expiration_time_min` existir, cria ou renova `expires_at`
+- se `expiration_time_min` existir, cria ou renova `z4j_expires_at`
 
 `merge_at_change`
 
 - cria quando nao existe
 - compara apenas os atributos definidos no YAML, ignorando campos automaticos
 - se nada mudou nos atributos de negocio, nao atualiza a entidade
-- se algo mudou, atualiza propriedades e renova `updated_at`
-- nao renova `expires_at`
+- se algo mudou, atualiza propriedades e renova `z4j_updated_at`
+- nao renova `z4j_expires_at`
 
 Se o campo for omitido, o default e `create`.
 
@@ -727,9 +731,9 @@ Sem `name`, o node e rejeitado na validacao. O campo pode vir de:
 
 O parser aceita `template_hashes` apenas como alias para um unico valor. Para relacionamento, o campo de entrada canonico continua sendo `template_hash`.
 
-### 3. Esperar `expires_at` em `merge_at_change`
+### 3. Esperar `z4j_expires_at` em `merge_at_change`
 
-Esse modo nao renova expiracao. Se o relacionamento ou node ja existir e nenhuma outra regra exigir recriacao, `expires_at` e preservado.
+Esse modo nao renova expiracao. Se o relacionamento ou node ja existir e nenhuma outra regra exigir recriacao, `z4j_expires_at` e preservado.
 
 ### 4. Referenciar colunas inexistentes em match
 

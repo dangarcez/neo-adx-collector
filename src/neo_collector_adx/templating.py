@@ -7,6 +7,15 @@ from datetime import date, datetime, time, timezone
 from decimal import Decimal
 from typing import Any
 
+from .graph_fields import (
+    CREATED_AT_PROPERTY,
+    NODE_TEMPLATE_HASHES_PROPERTY,
+    NODE_UID_PROPERTY,
+    ORIGIN_PROPERTY,
+    REL_TEMPLATE_HASH_PROPERTY,
+    REL_UID_PROPERTY,
+    UPDATED_AT_PROPERTY,
+)
 from .models import (
     ConditionalProperty,
     Condition,
@@ -47,11 +56,11 @@ class MutationBuilder:
         now = row.collected_at.astimezone(timezone.utc).isoformat()
         properties.update(
             {
-                "node_uid": str(uuid.uuid5(self.namespace, stable_key)),
-                "origin": "auto",
-                "template_hashes": template.template_hashes,
-                "created_at": now,
-                "updated_at": now,
+                NODE_UID_PROPERTY: str(uuid.uuid5(self.namespace, stable_key)),
+                ORIGIN_PROPERTY: "auto",
+                NODE_TEMPLATE_HASHES_PROPERTY: template.template_hashes,
+                CREATED_AT_PROPERTY: now,
+                UPDATED_AT_PROPERTY: now,
             }
         )
         labels = ["Entity", *template.types]
@@ -92,11 +101,11 @@ class MutationBuilder:
         now = row.collected_at.astimezone(timezone.utc).isoformat()
         properties.update(
             {
-                "rel_uid": str(uuid.uuid5(self.namespace, stable_key)),
-                "origin": "auto",
-                "template_hash": template.template_hash,
-                "created_at": now,
-                "updated_at": now,
+                REL_UID_PROPERTY: str(uuid.uuid5(self.namespace, stable_key)),
+                ORIGIN_PROPERTY: "auto",
+                REL_TEMPLATE_HASH_PROPERTY: template.template_hash,
+                CREATED_AT_PROPERTY: now,
+                UPDATED_AT_PROPERTY: now,
             }
         )
         return RelationshipMutation(

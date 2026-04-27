@@ -6,6 +6,16 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from .exceptions import ConfigurationError
+from .graph_fields import (
+    CREATED_AT_PROPERTY,
+    EXPIRES_AT_PROPERTY,
+    NODE_TEMPLATE_HASHES_PROPERTY,
+    NODE_UID_PROPERTY,
+    ORIGIN_PROPERTY,
+    REL_TEMPLATE_HASH_PROPERTY,
+    REL_UID_PROPERTY,
+    UPDATED_AT_PROPERTY,
+)
 from .models import (
     GraphNode,
     GraphRelationship,
@@ -113,15 +123,16 @@ class Neo4jGraphRepository:
 
     def ensure_schema(self) -> None:
         queries = [
-            "CREATE CONSTRAINT entity_node_uid_unique IF NOT EXISTS FOR (n:Entity) REQUIRE n.node_uid IS UNIQUE",
+            "CREATE CONSTRAINT entity_z4j_node_uid_unique "
+            f"IF NOT EXISTS FOR (n:Entity) REQUIRE n.{_escape_identifier(NODE_UID_PROPERTY)} IS UNIQUE",
             "CREATE INDEX entity_name_index IF NOT EXISTS FOR (n:Entity) ON (n.name)",
         ]
         for rel_type in self.relationship_types:
             queries.append(
                 "CREATE CONSTRAINT "
-                f"{_constraint_name('rel_uid_unique', rel_type)} "
+                f"{_constraint_name('z4j_rel_uid_unique', rel_type)} "
                 f"IF NOT EXISTS FOR ()-[r:{_escape_identifier(rel_type)}]-() "
-                "REQUIRE r.rel_uid IS UNIQUE"
+                f"REQUIRE r.{_escape_identifier(REL_UID_PROPERTY)} IS UNIQUE"
             )
         with self._session() as session:
             for query in queries:
@@ -185,7 +196,7 @@ class Neo4jGraphRepository:
                 action="skipped",
                 kind="relationship",
                 identifier=mutation.stable_key,
-                reason="source or target node has no node_uid",
+                reason=f"source or target node has no {NODE_UID_PROPERTY}",
             )
 
         existing = self._find_equivalent_relationship(source, target, mutation)
@@ -213,10 +224,10 @@ class Neo4jGraphRepository:
         return MutationResult(action="updated", kind="relationship", identifier=identifier)
 
     def _find_equivalent_node(self, mutation: NodeMutation) -> list[GraphNode]:
-        query = """
-        MATCH (n:Entity {name: $name})
+        query = f"""
+        MATCH (n:Entity {{name: $name}})
         WHERE
-          any(hash IN $template_hashes WHERE hash IN coalesce(n.template_hashes, []))
+          any(hash IN $template_hashes WHERE hash IN coalesce(n.{_escape_identifier(NODE_TEMPLATE_HASHES_PROPERTY)}, []))
           OR all(label IN $labels WHERE label IN labels(n))
         RETURN elementId(n) AS element_id, labels(n) AS labels, properties(n) AS properties
         LIMIT 2
@@ -238,13 +249,13 @@ class Neo4jGraphRepository:
         target: GraphNode,
         mutation: RelationshipMutation,
     ) -> list[GraphRelationship]:
-        query = """
+        query = f"""
         MATCH (s)-[r]->(t)
         WHERE elementId(s) = $source_id
           AND elementId(t) = $target_id
           AND (
             type(r) = $rel_type
-            OR r.template_hash = $template_hash
+            OR r.{_escape_identifier(REL_TEMPLATE_HASH_PROPERTY)} = $template_hash
           )
         RETURN elementId(r) AS element_id, type(r) AS rel_type, properties(r) AS properties
         LIMIT 2
@@ -281,21 +292,21 @@ class Neo4jGraphRepository:
             session.run(query, {"properties": properties}).consume()
 
     def _update_node(self, existing: GraphNode, mutation: NodeMutation) -> None:
-        current_hashes = _as_string_list(existing.properties.get("template_hashes"))
+        current_hashes = _as_string_list(existing.properties.get(NODE_TEMPLATE_HASHES_PROPERTY))
         merged_hashes = _merge_unique(current_hashes, mutation.template_hashes)
-        current_origin = existing.properties.get("origin") or "auto"
+        current_origin = existing.properties.get(ORIGIN_PROPERTY) or "auto"
         property_updates = dict(mutation.business_properties)
-        property_updates["updated_at"] = mutation.properties["updated_at"]
-        property_updates["template_hashes"] = merged_hashes
+        property_updates[UPDATED_AT_PROPERTY] = mutation.properties[UPDATED_AT_PROPERTY]
+        property_updates[NODE_TEMPLATE_HASHES_PROPERTY] = merged_hashes
         if mutation.update_policy == "merge":
             expires_at = _expires_at_value(mutation.expiration_time_min)
             if expires_at is not None:
-                property_updates["expires_at"] = expires_at
+                property_updates[EXPIRES_AT_PROPERTY] = expires_at
         query = f"""
         MATCH (n)
         WHERE elementId(n) = $element_id
         SET n += $property_updates
-        SET n.origin = coalesce(n.origin, $origin)
+        SET n.{_escape_identifier(ORIGIN_PROPERTY)} = coalesce(n.{_escape_identifier(ORIGIN_PROPERTY)}, $origin)
         SET n{_labels_fragment(mutation.labels)}
         """
         with self._session() as session:
@@ -337,14 +348,18 @@ class Neo4jGraphRepository:
         mutation: RelationshipMutation,
     ) -> None:
         final_properties = dict(mutation.business_properties)
-        final_properties["rel_uid"] = existing.properties.get("rel_uid") or mutation.properties["rel_uid"]
-        final_properties["origin"] = existing.properties.get("origin") or "auto"
-        final_properties["template_hash"] = mutation.template_hash
-        final_properties["created_at"] = existing.properties.get("created_at") or mutation.properties["created_at"]
-        final_properties["updated_at"] = mutation.properties["updated_at"]
+        final_properties[REL_UID_PROPERTY] = (
+            existing.properties.get(REL_UID_PROPERTY) or mutation.properties[REL_UID_PROPERTY]
+        )
+        final_properties[ORIGIN_PROPERTY] = existing.properties.get(ORIGIN_PROPERTY) or "auto"
+        final_properties[REL_TEMPLATE_HASH_PROPERTY] = mutation.template_hash
+        final_properties[CREATED_AT_PROPERTY] = (
+            existing.properties.get(CREATED_AT_PROPERTY) or mutation.properties[CREATED_AT_PROPERTY]
+        )
+        final_properties[UPDATED_AT_PROPERTY] = mutation.properties[UPDATED_AT_PROPERTY]
         expires_at = _resolve_relationship_expires_at(existing, mutation)
         if expires_at is not None:
-            final_properties["expires_at"] = expires_at
+            final_properties[EXPIRES_AT_PROPERTY] = expires_at
 
         if existing.rel_type != mutation.type:
             query = f"""
@@ -395,7 +410,7 @@ class Neo4jGraphRepository:
             ]
 
     def _node_needs_update(self, existing: GraphNode, mutation: NodeMutation) -> bool:
-        existing_hashes = set(_as_string_list(existing.properties.get("template_hashes")))
+        existing_hashes = set(_as_string_list(existing.properties.get(NODE_TEMPLATE_HASHES_PROPERTY)))
         expected_hashes = set(mutation.template_hashes)
         expected_labels = set(mutation.labels)
         current_labels = set(existing.labels)
@@ -410,7 +425,7 @@ class Neo4jGraphRepository:
         existing: GraphRelationship,
         mutation: RelationshipMutation,
     ) -> bool:
-        if existing.properties.get("template_hash") != mutation.template_hash:
+        if existing.properties.get(REL_TEMPLATE_HASH_PROPERTY) != mutation.template_hash:
             return True
         if existing.rel_type != mutation.type:
             return True
@@ -491,7 +506,7 @@ def _with_expires_at(properties: dict[str, Any], expiration_time_min: int | None
         return dict(properties)
 
     output = dict(properties)
-    output["expires_at"] = expires_at
+    output[EXPIRES_AT_PROPERTY] = expires_at
     return output
 
 
@@ -515,4 +530,4 @@ def _resolve_relationship_expires_at(
         renewed = _expires_at_value(mutation.expiration_time_min)
         if renewed is not None:
             return renewed
-    return existing.properties.get("expires_at")
+    return existing.properties.get(EXPIRES_AT_PROPERTY)

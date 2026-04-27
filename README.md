@@ -8,7 +8,7 @@ Coletor Python configurável por YAML que executa queries no Azure Data Explorer
 - configuração operacional via `.env`
 - modelagem declarativa via YAML
 - políticas `create`, `merge` e `merge_at_change`
-- criação automática de `node_uid`, `rel_uid`, `origin`, `created_at` e `updated_at`
+- criação automática de campos técnicos com prefixo `z4j_`, como `z4j_node_uid`, `z4j_rel_uid`, `z4j_origin`, `z4j_created_at` e `z4j_updated_at`
 - documentação em `docs/`
 - exemplos de configuração em `config.demo.yaml` e `configs/`
 

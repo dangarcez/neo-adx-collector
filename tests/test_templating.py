@@ -4,9 +4,20 @@ import unittest
 import uuid
 from datetime import datetime, timezone
 
+from neo_collector_adx.graph_fields import (
+    CREATED_AT_PROPERTY,
+    EXPIRES_AT_PROPERTY,
+    NODE_TEMPLATE_HASHES_PROPERTY,
+    NODE_UID_PROPERTY,
+    ORIGIN_PROPERTY,
+    REL_TEMPLATE_HASH_PROPERTY,
+    REL_UID_PROPERTY,
+    UPDATED_AT_PROPERTY,
+)
 from neo_collector_adx.models import (
     ConditionalProperty,
     Condition,
+    GraphNode,
     GraphRelationship,
     MatchAttributes,
     NodeSelector,
@@ -78,7 +89,16 @@ class MutationBuilderTests(unittest.TestCase):
         self.assertEqual("ALICE@EXAMPLE.COM", mutation.business_properties["name"])
         self.assertEqual("high", mutation.business_properties["risk"])
         self.assertEqual(15, mutation.expiration_time_min)
-        self.assertEqual("auto", mutation.properties["origin"])
+        self.assertEqual("auto", mutation.properties[ORIGIN_PROPERTY])
+        self.assertIn(NODE_UID_PROPERTY, mutation.properties)
+        self.assertEqual(["user-v1"], mutation.properties[NODE_TEMPLATE_HASHES_PROPERTY])
+        self.assertIn(CREATED_AT_PROPERTY, mutation.properties)
+        self.assertIn(UPDATED_AT_PROPERTY, mutation.properties)
+        self.assertNotIn("node_uid", mutation.properties)
+        self.assertNotIn("origin", mutation.properties)
+        self.assertNotIn("template_hashes", mutation.properties)
+        self.assertNotIn("created_at", mutation.properties)
+        self.assertNotIn("updated_at", mutation.properties)
         self.assertIn("Entity", mutation.labels)
 
     def test_property_transform_ignores_non_string_values(self) -> None:
@@ -207,7 +227,14 @@ class MutationBuilderTests(unittest.TestCase):
         self.assertEqual("alice@example.com", mutation.source_match.attributes["name"])
         self.assertEqual("10.0.0.10", mutation.target_match.attributes["name"])
         self.assertEqual("BR", mutation.business_properties["country"])
-        self.assertEqual("user-ip-v1", mutation.properties["template_hash"])
+        self.assertEqual("user-ip-v1", mutation.properties[REL_TEMPLATE_HASH_PROPERTY])
+        self.assertIn(REL_UID_PROPERTY, mutation.properties)
+        self.assertEqual("auto", mutation.properties[ORIGIN_PROPERTY])
+        self.assertIn(CREATED_AT_PROPERTY, mutation.properties)
+        self.assertIn(UPDATED_AT_PROPERTY, mutation.properties)
+        self.assertNotIn("rel_uid", mutation.properties)
+        self.assertNotIn("origin", mutation.properties)
+        self.assertNotIn("template_hash", mutation.properties)
         self.assertNotIn("template_hashes", mutation.properties)
 
     def test_relationship_update_comparison_uses_template_hash_property(self) -> None:
@@ -234,11 +261,26 @@ class MutationBuilderTests(unittest.TestCase):
         current = GraphRelationship(
             element_id="rel-1",
             rel_type="AUTHENTICATED_FROM",
-            properties={"template_hash": "user-ip-v1", "country": "BR"},
+            properties={REL_TEMPLATE_HASH_PROPERTY: "user-ip-v1", "country": "BR"},
         )
 
         self.assertIsNotNone(mutation)
         self.assertFalse(repository._relationship_needs_update(current, mutation))
+
+    def test_graph_node_uid_reads_prefixed_property_only(self) -> None:
+        current = GraphNode(
+            element_id="node-1",
+            labels=["Entity", "User"],
+            properties={NODE_UID_PROPERTY: "node-uid-1"},
+        )
+        legacy = GraphNode(
+            element_id="node-2",
+            labels=["Entity", "User"],
+            properties={"node_uid": "legacy-node-uid"},
+        )
+
+        self.assertEqual("node-uid-1", current.node_uid)
+        self.assertIsNone(legacy.node_uid)
 
     def test_skips_relationship_when_selector_column_is_missing(self) -> None:
         template = RelationshipTemplate(
@@ -313,7 +355,7 @@ class MutationBuilderTests(unittest.TestCase):
         mutation = self.builder.build_relationship(template, self.row)
 
         class ExistingRelationship:
-            properties = {"expires_at": "2026-04-21T13:00:00+00:00"}
+            properties = {EXPIRES_AT_PROPERTY: "2026-04-21T13:00:00+00:00"}
 
         self.assertEqual(
             "2026-04-21T13:00:00+00:00",

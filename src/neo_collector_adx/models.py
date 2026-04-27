@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Literal
 
+from .graph_fields import NODE_UID_PROPERTY
+
 
 UpdatePolicy = Literal["create", "merge", "merge_at_change"]
 ConditionOperator = Literal["equals", "not_equals", "greater_than", "less_than"]
@@ -172,7 +174,7 @@ class GraphNode:
 
     @property
     def node_uid(self) -> str | None:
-        value = self.properties.get("node_uid")
+        value = self.properties.get(NODE_UID_PROPERTY)
         return str(value) if value is not None else None
 
 
