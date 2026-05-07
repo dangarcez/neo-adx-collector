@@ -54,6 +54,7 @@ class MatchAttributes:
 class NodeSelector:
     type: str
     match_attributes: MatchAttributes
+    prior_transform: list[PropertyTransform] = field(default_factory=list)
 
 
 @dataclass(slots=True)

@@ -1,13 +1,12 @@
 services:
-  neo-collector-adx:
-    image: localhost/neo_adx_collector:1.0
-    env_file:
-      - .env
-    volumes:
-      - ./config.test.yaml:/app/config.test.yaml:ro
-    command: [ "--config", "/app/config.test.yaml", "--once" ]
+   neo-collector-adx:
+      image: localhost/neo_adx_collector:1.0
+      env_file:
+         - .env
+      volumes:
+         - ./config.test.yaml:/app/config.test.yaml:ro
+      command: [ "--config", "/app/config.test.yaml", "--once" ]
 
 volumes:
-  neo4j_data:
-
+   neo4j_data:
 

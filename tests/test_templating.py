@@ -237,6 +237,132 @@ class MutationBuilderTests(unittest.TestCase):
         self.assertNotIn("template_hash", mutation.properties)
         self.assertNotIn("template_hashes", mutation.properties)
 
+    def test_relationship_prior_transform_uses_source_column_name(self) -> None:
+        template = RelationshipTemplate(
+            type="AUTHENTICATED_FROM",
+            template_hash="user-ip-v1",
+            update_policy="merge",
+            static_properties={},
+            column_properties={},
+            conditional_properties=[],
+            conditions=[],
+            source=NodeSelector(
+                type="User",
+                match_attributes=MatchAttributes(columns={"name": "UserPrincipalName"}),
+                prior_transform=[
+                    PropertyTransform(
+                        property="UserPrincipalName",
+                        process=[PropertyTransformProcessor(type="TO_UPPER")],
+                    )
+                ],
+            ),
+            target=NodeSelector(
+                type="IPAddress",
+                match_attributes=MatchAttributes(columns={"name": "IPAddress"}),
+            ),
+        )
+
+        mutation = self.builder.build_relationship(template, self.row)
+
+        self.assertIsNotNone(mutation)
+        self.assertEqual("ALICE@EXAMPLE.COM", mutation.source_match.attributes["name"])
+
+    def test_relationship_prior_transform_ignores_node_property_name(self) -> None:
+        template = RelationshipTemplate(
+            type="AUTHENTICATED_FROM",
+            template_hash="user-ip-v1",
+            update_policy="merge",
+            static_properties={},
+            column_properties={},
+            conditional_properties=[],
+            conditions=[],
+            source=NodeSelector(
+                type="User",
+                match_attributes=MatchAttributes(columns={"name": "UserPrincipalName"}),
+                prior_transform=[
+                    PropertyTransform(
+                        property="name",
+                        process=[PropertyTransformProcessor(type="TO_UPPER")],
+                    )
+                ],
+            ),
+            target=NodeSelector(
+                type="IPAddress",
+                match_attributes=MatchAttributes(columns={"name": "IPAddress"}),
+            ),
+        )
+
+        mutation = self.builder.build_relationship(template, self.row)
+
+        self.assertIsNotNone(mutation)
+        self.assertEqual("alice@example.com", mutation.source_match.attributes["name"])
+
+    def test_relationship_prior_transform_does_not_change_static_match_attributes(self) -> None:
+        template = RelationshipTemplate(
+            type="AUTHENTICATED_FROM",
+            template_hash="user-ip-v1",
+            update_policy="merge",
+            static_properties={},
+            column_properties={},
+            conditional_properties=[],
+            conditions=[],
+            source=NodeSelector(
+                type="User",
+                match_attributes=MatchAttributes(static={"name": "alice@example.com"}),
+                prior_transform=[
+                    PropertyTransform(
+                        property="name",
+                        process=[PropertyTransformProcessor(type="TO_UPPER")],
+                    )
+                ],
+            ),
+            target=NodeSelector(
+                type="IPAddress",
+                match_attributes=MatchAttributes(columns={"name": "IPAddress"}),
+            ),
+        )
+
+        mutation = self.builder.build_relationship(template, self.row)
+
+        self.assertIsNotNone(mutation)
+        self.assertEqual("alice@example.com", mutation.source_match.attributes["name"])
+
+    def test_relationship_prior_transform_supports_regex(self) -> None:
+        template = RelationshipTemplate(
+            type="DEPENDS_ON",
+            template_hash="resource-v1",
+            update_policy="merge",
+            static_properties={},
+            column_properties={},
+            conditional_properties=[],
+            conditions=[],
+            source=NodeSelector(
+                type="Resource",
+                match_attributes=MatchAttributes(columns={"name": "ResourceName"}),
+                prior_transform=[
+                    PropertyTransform(
+                        property="ResourceName",
+                        process=[
+                            PropertyTransformProcessor(
+                                type="REGEX",
+                                pattern=r"(\w+)_(\w+)",
+                                output="$1-and-$2",
+                            )
+                        ],
+                    )
+                ],
+            ),
+            target=NodeSelector(
+                type="IPAddress",
+                match_attributes=MatchAttributes(columns={"name": "IPAddress"}),
+            ),
+        )
+
+        mutation = self.builder.build_relationship(template, self.row)
+
+        self.assertIsNotNone(mutation)
+        self.assertEqual("cpu-and-vru", mutation.source_match.attributes["name"])
+
     def test_relationship_update_comparison_uses_template_hash_property(self) -> None:
         template = RelationshipTemplate(
             type="AUTHENTICATED_FROM",

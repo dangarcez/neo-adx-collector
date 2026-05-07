@@ -164,6 +164,49 @@ class ConfigLoadingTests(unittest.TestCase):
         self.assertEqual(r"(\w+)_(\w+)", processor.pattern)
         self.assertEqual("$1_and_$2", processor.output)
 
+    def test_loads_selector_prior_transform(self) -> None:
+        yaml_text = """
+        jobs:
+          - name: resources
+            query: Resources
+            relationships:
+              - type: DEPENDS_ON
+                template_hash: rel-v1
+                source:
+                  type: User
+                  match_attributes:
+                    columns:
+                      name: UserPrincipalName
+                  prior_transform:
+                    - property: UserPrincipalName
+                      process:
+                        - type: TO_UPPER
+                target:
+                  type: Resource
+                  match_attributes:
+                    columns:
+                      name: ResourceName
+                  prior_transform:
+                    - property: ResourceName
+                      process:
+                        - type: regex
+                          pattern: '/(\\w+)_(\\w+)/'
+                          output: '$1-and-$2'
+        """
+
+        with _temp_yaml(yaml_text) as path:
+            config = load_app_config(path)
+
+        relationship = config.jobs[0].relationships[0]
+        self.assertEqual(
+            "TO_UPPER",
+            relationship.source.prior_transform[0].process[0].type,
+        )
+        target_processor = relationship.target.prior_transform[0].process[0]
+        self.assertEqual("REGEX", target_processor.type)
+        self.assertEqual(r"(\w+)_(\w+)", target_processor.pattern)
+        self.assertEqual("$1-and-$2", target_processor.output)
+
     def test_rejects_regex_transform_without_capture_group(self) -> None:
         yaml_text = """
         jobs:

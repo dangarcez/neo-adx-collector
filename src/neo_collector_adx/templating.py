@@ -89,8 +89,20 @@ class MutationBuilder:
             property_transforms=template.property_transforms,
             row=row,
         )
-        source_match = self._resolve_selector_match(template.source.type, template.source.match_attributes.static, template.source.match_attributes.columns, row)
-        target_match = self._resolve_selector_match(template.target.type, template.target.match_attributes.static, template.target.match_attributes.columns, row)
+        source_match = self._resolve_selector_match(
+            template.source.type,
+            template.source.match_attributes.static,
+            template.source.match_attributes.columns,
+            template.source.prior_transform,
+            row,
+        )
+        target_match = self._resolve_selector_match(
+            template.target.type,
+            template.target.match_attributes.static,
+            template.target.match_attributes.columns,
+            template.target.prior_transform,
+            row,
+        )
         if source_match is None or target_match is None:
             return None
 
@@ -125,13 +137,20 @@ class MutationBuilder:
         node_type: str,
         static_attributes: dict[str, Any],
         column_attributes: dict[str, str],
+        prior_transform: list[PropertyTransform],
         row: RowContext,
     ) -> NodeMatch | None:
         attributes = {key: self._normalize_value(value) for key, value in static_attributes.items()}
-        for key, column in column_attributes.items():
+        column_values: dict[str, Any] = {}
+        for column in column_attributes.values():
             if column not in row.row:
                 return None
-            attributes[key] = self._normalize_value(row.row[column])
+            column_values[column] = self._normalize_value(row.row[column])
+
+        self._apply_property_transforms(column_values, prior_transform)
+
+        for key, column in column_attributes.items():
+            attributes[key] = column_values[column]
         return NodeMatch(type=node_type, attributes=attributes)
 
     def _resolve_properties(

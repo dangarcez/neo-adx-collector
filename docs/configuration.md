@@ -175,6 +175,10 @@ jobs:
           match_attributes:
             columns:
               name: UserPrincipalName
+          prior_transform:
+            - property: UserPrincipalName
+              process:
+                - type: TO_LOWER
         target:
           type: IPAddress
           match_attributes:
@@ -366,6 +370,7 @@ Esses blocos definem como localizar os nodes ja existentes que receberao o relac
 | `type` | string | sim | Label tecnica do node a ser encontrado. |
 | `match_attributes.static` | mapa | nao | Atributos fixos usados no match. |
 | `match_attributes.columns` | mapa string->string | nao | Atributos resolvidos a partir de colunas da linha. |
+| `prior_transform` | lista | nao | Processamentos aplicados aos valores das colunas antes do match. Usa o mesmo schema de `property_transforms`. |
 
 Pelo menos um atributo de match deve existir entre `static` e `columns`.
 
@@ -375,6 +380,8 @@ Pelo menos um atributo de match deve existir entre `static` e `columns`.
 - se houver multiplos `source` e multiplos `target`, o coletor cria o produto cartesiano entre eles
 - exemplo: `2 source x 3 target = 6` relacionamentos
 - a unica ambiguidade que continua sendo erro e encontrar mais de um relacionamento equivalente ja existente para o mesmo par `source-target`
+- `prior_transform[].property` referencia o nome da coluna de origem, nao o nome da propriedade do node
+- `prior_transform` so altera valores vindos de `match_attributes.columns`; `match_attributes.static` nunca e transformado
 
 ### Exemplo
 
@@ -386,6 +393,10 @@ source:
       z4j_origin: auto
     columns:
       name: UserPrincipalName
+  prior_transform:
+    - property: UserPrincipalName
+      process:
+        - type: TO_LOWER
 ```
 
 ### Aliases legados suportados
@@ -578,6 +589,32 @@ Regras:
 - se a propriedade nao existir, o transform e ignorado
 - se o valor nao for string, o processor e ignorado
 
+### `prior_transform` em `source` e `target`
+
+Executa processors sobre valores de colunas antes de eles serem usados no match do node de origem ou destino. O schema e o mesmo de `property_transforms`, mas `property` referencia o nome da coluna da query.
+
+```yaml
+source:
+  type: User
+  match_attributes:
+    columns:
+      name: UserPrincipalName
+  prior_transform:
+    - property: UserPrincipalName
+      process:
+        - type: TO_LOWER
+```
+
+Com `UserPrincipalName: "ALICE@EXAMPLE.COM"`, o relacionamento procura o node com `name: "alice@example.com"`.
+
+Regras:
+
+- roda depois que as colunas de `match_attributes.columns` sao lidas da linha
+- roda antes do valor ser atribuido a propriedade de match do node
+- transforma apenas colunas usadas em `match_attributes.columns`
+- nao transforma `match_attributes.static`
+- se `property` apontar para uma coluna nao usada no match, o transform e ignorado
+
 ### `expiration_time_min`
 
 Campo opcional para node ou relacionamento.
@@ -685,6 +722,7 @@ Se o campo for omitido, o default e `create`.
 - `relationships[].update_policy`: `create`
 - mapas de propriedades ausentes sao normalizados para objetos vazios
 - `conditional_properties` e `property_transforms` ausentes sao normalizados para listas vazias
+- `source.prior_transform` e `target.prior_transform` ausentes sao normalizados para listas vazias
 
 ### Normalizacoes aceitas
 
@@ -692,7 +730,7 @@ Se o campo for omitido, o default e `create`.
 - `relationships[].template_hashes` com um unico item e convertido para `template_hash`
 - `mergeAtChange` e `merge-at-change` sao aceitos como alias de `merge_at_change`
 - `dynamic_properties` e aceito como alias de `column_properties`
-- tipos em `property_transforms[].process[].type` sao normalizados para maiusculas
+- tipos em `property_transforms[].process[].type` e `prior_transform[].process[].type` sao normalizados para maiusculas
 - aliases legados de match sao incorporados em `match_attributes`
 - strings com espacos nas extremidades sao `trimadas` nos campos relevantes
 
@@ -713,7 +751,7 @@ O bootstrap falha antes de iniciar o scheduler quando encontrar erros como:
 - `source` ou `target` sem atributos de match
 - `update_policy` fora de `create`, `merge` ou `merge_at_change`
 - `expiration_time_min <= 0` quando informado
-- `property_transforms` sem `property`, sem `process` ou com processor invalido
+- `property_transforms` ou `prior_transform` sem `property`, sem `process` ou com processor invalido
 - processor `regex` sem `pattern`, sem `output`, com regex invalida, sem grupo de captura ou com referencia de grupo inexistente
 - `conditional_properties` sem `name`, `type` valido ou `conditions`
 - condicoes com mais de um operador
@@ -738,6 +776,8 @@ Esse modo nao renova expiracao. Se o relacionamento ou node ja existir e nenhuma
 ### 4. Referenciar colunas inexistentes em match
 
 Se uma coluna referenciada em `match_attributes.columns` nao existir na linha, o relacionamento nao consegue localizar o lado correspondente corretamente.
+
+Em `prior_transform`, `property` deve apontar para a coluna da query. Se apontar para a propriedade do node, como `name`, a transformacao sera ignorada quando nao houver uma coluna com esse nome no match.
 
 ### 5. Esperar criacao automatica de nodes a partir de relacionamento
 
@@ -812,6 +852,10 @@ jobs:
           match_attributes:
             columns:
               name: UserPrincipalName
+          prior_transform:
+            - property: UserPrincipalName
+              process:
+                - type: TO_LOWER
         target:
           type: IPAddress
           match_attributes:

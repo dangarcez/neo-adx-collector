@@ -64,6 +64,10 @@ jobs:
           match_attributes:
             columns:
               name: UserPrincipalName
+          prior_transform:
+            - property: UserPrincipalName
+              process:
+                - type: TO_LOWER
         target:
           type: IPAddress
           match_attributes:

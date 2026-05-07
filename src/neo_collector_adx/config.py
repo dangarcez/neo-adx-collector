@@ -244,6 +244,10 @@ def _parse_selector(data: Any, ctx: str) -> NodeSelector:
     )
     if not static_attributes and not column_attributes:
         raise ConfigurationError(f"{ctx} must define at least one match attribute.")
+    prior_transform = _parse_property_transforms(
+        data.get("prior_transform") or [],
+        f"{ctx}.prior_transform",
+    )
 
     return NodeSelector(
         type=selector_type,
@@ -251,6 +255,7 @@ def _parse_selector(data: Any, ctx: str) -> NodeSelector:
             static=static_attributes,
             columns=column_attributes,
         ),
+        prior_transform=prior_transform,
     )
 
 
